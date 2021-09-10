@@ -7,22 +7,25 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type Node struct {
-	Address string `yaml:"address"`
-	ID      string `yaml:"id"`
+type ClusterDiscovery interface {
+	DiscoverNodes() ([]NodeDescription, error)
 }
 
-type ClusterDiscovery interface {
-	DiscoverNodes() ([]Node, error)
+func indexNodes(nodes []NodeDescription) map[string]NodeDescription {
+	indexed := make(map[string]NodeDescription, len(nodes))
+	for _, node := range nodes {
+		indexed[node.ID] = node
+	}
+	return indexed
 }
 
 type ClusterDiscoveryFromFile struct {
 	ConfigFile string
 }
 
-func (c *ClusterDiscoveryFromFile) DiscoverNodes() ([]Node, error) {
+func (c *ClusterDiscoveryFromFile) DiscoverNodes() ([]NodeDescription, error) {
 	type Config struct {
-		Nodes []Node `yaml:"nodes"`
+		Nodes []NodeDescription `yaml:"nodes"`
 	}
 
 	yamlBytes, err := ioutil.ReadFile(c.ConfigFile)

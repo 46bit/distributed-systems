@@ -11,26 +11,36 @@ func main() {
 	// FIXME: Take config better
 	configFilePath := os.Args[1]
 	nodeID := os.Args[2]
-	gossipRegularity := 1 * time.Second
-	nodeTimeoutAfter := 2 * gossipRegularity
+	// FIXME: Configure node local address better
+	localAddress := ":" + nodeID
 
 	clusterDiscovery := ClusterDiscoveryFromFile{ConfigFile: configFilePath}
-	nodes, err := clusterDiscovery.DiscoverNodes()
+	nodeList, err := clusterDiscovery.DiscoverNodes()
 	if err != nil {
 		log.Fatal(fmt.Errorf("error discovering nodes: %w", err))
 	}
 
-	gossipStatus := NewGossipStatus(nodeID, nodes, gossipRegularity, nodeTimeoutAfter)
+	otherNodes := indexNodes(nodeList)
+	delete(otherNodes, nodeID)
+	node := &Node{
+		ID:           nodeID,
+		LocalAddress: localAddress,
+		OtherNodes:   otherNodes,
+	}
+
+	gossipSettings := GossipSettings{
+		GossipRegularity: 1 * time.Second,
+		NodeTimeoutAfter: 2 * time.Second,
+	}
+	gossip := NewGossip(node, gossipSettings)
 	go func() {
-		// FIXME: Configure node local address better
-		err := Gossip(gossipStatus, nodes, ":"+nodeID)
-		if err != nil {
+		if err := gossip.Run(); err != nil {
 			log.Fatal(fmt.Errorf("error in gossiping: %w", err))
 		}
 	}()
 
 	for range time.Tick(1 * time.Second) {
-		gossipSummary := gossipStatus.Summary()
-		fmt.Printf("CanSeeMostOfCluster=%v %#v\n", gossipSummary.CanSeeMostOfCluster(), gossipSummary)
+		summary := gossip.Summary()
+		fmt.Printf("RecentlySawMostOfCluster=%v %#v\n", summary.RecentlySawMostOfCluster(), summary)
 	}
 }

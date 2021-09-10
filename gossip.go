@@ -12,49 +12,45 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type NodeID = string
-
-type GossipStatus struct {
-	sync.Mutex
-
-	NodeID           NodeID
+type GossipSettings struct {
 	GossipRegularity time.Duration
 	NodeTimeoutAfter time.Duration
-	StartedAt        time.Time
-	NodesStatus      map[NodeID]NodeGossipStatus
 }
 
-type NodeGossipStatus struct {
-	TimeOfLastMessage *time.Time
+type Gossip struct {
+	sync.Mutex
+	GossipSettings
+
+	Node              *Node
+	OtherNodeStatuses map[NodeID]NodeGossip
 }
 
-func NewGossipStatus(nodeID NodeID, nodes []Node, gossipRegularity time.Duration, nodeTimeoutAfter time.Duration) *GossipStatus {
-	gossipStatus := &GossipStatus{
-		NodeID:           nodeID,
-		GossipRegularity: gossipRegularity,
-		NodeTimeoutAfter: nodeTimeoutAfter,
-		StartedAt:        time.Now(),
-		NodesStatus:      map[NodeID]NodeGossipStatus{},
+type NodeGossip struct {
+	LastSeenAt *time.Time
+}
+
+func NewGossip(node *Node, gossipSettings GossipSettings) *Gossip {
+	gossip := &Gossip{
+		GossipSettings:    gossipSettings,
+		Node:              node,
+		OtherNodeStatuses: map[NodeID]NodeGossip{},
 	}
-	for _, node := range nodes {
-		if node.ID == nodeID {
-			continue
-		}
-		gossipStatus.NodesStatus[node.ID] = NodeGossipStatus{}
+	for _, otherNode := range node.OtherNodes {
+		gossip.OtherNodeStatuses[otherNode.ID] = NodeGossip{}
 	}
-	return gossipStatus
+	return gossip
 }
 
-func (g *GossipStatus) Summary() *GossipStatusSummary {
+func (g *Gossip) Summary() *GossipSummary {
 	g.Lock()
 	defer g.Unlock()
 
 	seenWithinTimeout := 0
-	for _, nodeStatus := range g.NodesStatus {
-		if nodeStatus.TimeOfLastMessage == nil {
+	for _, nodeStatus := range g.OtherNodeStatuses {
+		if nodeStatus.LastSeenAt == nil {
 			continue
 		}
-		age := time.Now().Sub(*nodeStatus.TimeOfLastMessage)
+		age := time.Now().Sub(*nodeStatus.LastSeenAt)
 		if age > g.NodeTimeoutAfter {
 			continue
 		}
@@ -62,60 +58,28 @@ func (g *GossipStatus) Summary() *GossipStatusSummary {
 	}
 
 	// Adds 1 to number of nodes for the current node
-	return &GossipStatusSummary{
-		ClusterNodeCount:       len(g.NodesStatus) + 1,
-		NodesSeenWithinTimeout: seenWithinTimeout,
+	return &GossipSummary{
+		ClusterNodeCount:       1 + len(g.Node.OtherNodes),
+		OtherNodesSeenRecently: seenWithinTimeout,
 	}
 }
 
-type GossipStatusSummary struct {
+type GossipSummary struct {
 	ClusterNodeCount       int
-	NodesSeenWithinTimeout int
+	OtherNodesSeenRecently int
 }
 
-func (g *GossipStatusSummary) CanSeeMostOfCluster() bool {
-	nodesSeenIncludingItself := g.NodesSeenWithinTimeout + 1
+func (g *GossipSummary) RecentlySawMostOfCluster() bool {
+	nodesSeenIncludingItself := 1 + g.OtherNodesSeenRecently
 	return nodesSeenIncludingItself > g.ClusterNodeCount/2
 }
 
-type GossipMessage struct {
-	NodeID    NodeID    `yaml:"node_id"`
-	Timestamp time.Time `yaml:"timestamp"`
+func (g *Gossip) Run() error {
+	go gossipBroadcast(g)
+	return gossipServer(g)
 }
 
-func NewGossipMessage(gossipStatus *GossipStatus) *GossipMessage {
-	gossipStatus.Lock()
-	defer gossipStatus.Unlock()
-
-	gossipMessage := &GossipMessage{
-		NodeID:    gossipStatus.NodeID,
-		Timestamp: time.Now(),
-	}
-	return gossipMessage
-}
-
-type GossipReply struct {
-	NodeID    NodeID    `yaml:"node_id"`
-	Timestamp time.Time `yaml:"timestamp"`
-}
-
-func NewGossipReply(gossipStatus *GossipStatus) *GossipReply {
-	// FIXME: Make node ID fixed so obviously safe to not lock?
-	gossipStatus.Lock()
-	defer gossipStatus.Unlock()
-
-	return &GossipReply{
-		NodeID:    gossipStatus.NodeID,
-		Timestamp: time.Now(),
-	}
-}
-
-func Gossip(gossipStatus *GossipStatus, nodes []Node, localGossipAddress string) error {
-	go gossipBroadcast(nodes, gossipStatus)
-	return gossipServer(localGossipAddress, gossipStatus)
-}
-
-func gossipServer(localAddress string, gossipStatus *GossipStatus) error {
+func gossipServer(g *Gossip) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bodyBytes, err := ioutil.ReadAll(r.Body)
@@ -124,26 +88,26 @@ func gossipServer(localAddress string, gossipStatus *GossipStatus) error {
 			return
 		}
 
-		var gossipMessage GossipMessage
+		var gossipMessage gossipMessage
 		if err = yaml.Unmarshal(bodyBytes, &gossipMessage); err != nil {
 			log.Println(fmt.Errorf("error deserialising body: %w", err))
 		}
 
 		// FIXME: Authenticate nodes with Mutual TLS?
-		gossipStatus.Lock()
-		_, ok := gossipStatus.NodesStatus[gossipMessage.NodeID]
+		g.Lock()
+		_, ok := g.OtherNodeStatuses[gossipMessage.NodeID]
 		if !ok {
-			gossipStatus.Unlock()
+			g.Unlock()
 			log.Println(fmt.Errorf("error: received gossip message for unknown node id '%s'", gossipMessage.NodeID))
 			return
 		}
-		nodeStatus := gossipStatus.NodesStatus[gossipMessage.NodeID]
+		nodeStatus := g.OtherNodeStatuses[gossipMessage.NodeID]
 		now := time.Now()
-		nodeStatus.TimeOfLastMessage = &now
-		gossipStatus.NodesStatus[gossipMessage.NodeID] = nodeStatus
-		gossipStatus.Unlock()
+		nodeStatus.LastSeenAt = &now
+		g.OtherNodeStatuses[gossipMessage.NodeID] = nodeStatus
+		g.Unlock()
 
-		reply := NewGossipReply(gossipStatus)
+		reply := newGossipReply(g)
 		replyBytes, err := yaml.Marshal(&reply)
 		if err != nil {
 			log.Println(fmt.Errorf("error serialising reply into YAML: %w", err))
@@ -155,31 +119,55 @@ func gossipServer(localAddress string, gossipStatus *GossipStatus) error {
 		}
 	}))
 	// FIXME: Configure aggressive timeouts etc
-	return http.ListenAndServe(localAddress, mux)
+	return http.ListenAndServe(g.Node.LocalAddress, mux)
 }
 
-func gossipBroadcast(nodes []Node, gossipStatus *GossipStatus) {
+func gossipBroadcast(g *Gossip) {
 	// FIXME: Make gossip regularlity fixed so obviously safe to not lock?
-	gossipStatus.Lock()
-	gossipRegularity := gossipStatus.GossipRegularity
-	nodeID := gossipStatus.NodeID
-	gossipStatus.Unlock()
+	g.Lock()
+	gossipRegularity := g.GossipRegularity
+	g.Unlock()
 
 	for range time.Tick(gossipRegularity) {
-		gossipMessage := NewGossipMessage(gossipStatus)
-		for _, node := range nodes {
-			if node.ID == nodeID {
-				continue
-			}
-			err := sendGossipMessage(gossipMessage, node.Address)
+		gossipMessage := newGossipMessage(g)
+		for _, otherNode := range g.Node.OtherNodes {
+			err := sendGossipMessage(gossipMessage, otherNode.RemoteAddress)
 			if err != nil {
-				log.Println(fmt.Errorf("error sending gossip message to node '%s': %w", node.ID, err))
+				log.Println(fmt.Errorf("error sending gossip message to node '%s': %w", otherNode.ID, err))
 			}
 		}
 	}
 }
 
-func sendGossipMessage(gossipMessage *GossipMessage, nodeAddress string) error {
+type gossipMessage struct {
+	NodeID    NodeID    `yaml:"node_id"`
+	Timestamp time.Time `yaml:"timestamp"`
+}
+
+func newGossipMessage(g *Gossip) *gossipMessage {
+	g.Lock()
+	defer g.Unlock()
+	return &gossipMessage{
+		NodeID:    g.Node.ID,
+		Timestamp: time.Now(),
+	}
+}
+
+type gossipReply struct {
+	NodeID    NodeID    `yaml:"node_id"`
+	Timestamp time.Time `yaml:"timestamp"`
+}
+
+func newGossipReply(g *Gossip) *gossipReply {
+	g.Lock()
+	defer g.Unlock()
+	return &gossipReply{
+		NodeID:    g.Node.ID,
+		Timestamp: time.Now(),
+	}
+}
+
+func sendGossipMessage(gossipMessage *gossipMessage, nodeAddress string) error {
 	url := fmt.Sprintf("http://%s/", nodeAddress)
 	messageBytes, err := yaml.Marshal(gossipMessage)
 	if err != nil {
@@ -196,7 +184,7 @@ func sendGossipMessage(gossipMessage *GossipMessage, nodeAddress string) error {
 		return fmt.Errorf("error reading from connection: %w", err)
 	}
 
-	var gossipReply GossipReply
+	var gossipReply gossipReply
 	if err = yaml.Unmarshal(bodyBytes, &gossipReply); err != nil {
 		return fmt.Errorf("error deserialising body: %w", err)
 	}

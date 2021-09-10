@@ -24,6 +24,10 @@ type GossipStatus struct {
 	NodesStatus      map[NodeID]NodeGossipStatus
 }
 
+type NodeGossipStatus struct {
+	TimeOfLastMessage *time.Time
+}
+
 func NewGossipStatus(nodeID NodeID, nodes []Node, gossipRegularity time.Duration, nodeTimeoutAfter time.Duration) *GossipStatus {
 	gossipStatus := &GossipStatus{
 		NodeID:           nodeID,
@@ -41,45 +45,37 @@ func NewGossipStatus(nodeID NodeID, nodes []Node, gossipRegularity time.Duration
 	return gossipStatus
 }
 
-type GossipStatusSummary struct {
-	NumberOfNodes             int
-	SeenDirectlyWithinTimeout int
-}
-
-func (g *GossipStatusSummary) MostNodesSeenDirectlyWithinTimeout() bool {
-	return g.SeenDirectlyWithinTimeout > g.NumberOfNodes/2
-}
-
 func (g *GossipStatus) Summary() *GossipStatusSummary {
 	g.Lock()
 	defer g.Unlock()
 
-	// FIXME: Make clearer that the current node is automatically present?
-	seenDirectlyWithinTimeout := 1
-	for nodeID, nodeStatus := range g.NodesStatus {
-		if nodeID == g.NodeID {
+	seenWithinTimeout := 0
+	for _, nodeStatus := range g.NodesStatus {
+		if nodeStatus.TimeOfLastMessage == nil {
 			continue
 		}
-
-		if nodeStatus.TimeOfLastDirectMessage == nil {
-			continue
-		}
-		age := time.Now().Sub(*nodeStatus.TimeOfLastDirectMessage)
+		age := time.Now().Sub(*nodeStatus.TimeOfLastMessage)
 		if age > g.NodeTimeoutAfter {
 			continue
 		}
-		seenDirectlyWithinTimeout += 1
+		seenWithinTimeout += 1
 	}
 
 	// Adds 1 to number of nodes for the current node
 	return &GossipStatusSummary{
-		NumberOfNodes:             len(g.NodesStatus) + 1,
-		SeenDirectlyWithinTimeout: seenDirectlyWithinTimeout,
+		ClusterNodeCount:       len(g.NodesStatus) + 1,
+		NodesSeenWithinTimeout: seenWithinTimeout,
 	}
 }
 
-type NodeGossipStatus struct {
-	TimeOfLastDirectMessage *time.Time
+type GossipStatusSummary struct {
+	ClusterNodeCount       int
+	NodesSeenWithinTimeout int
+}
+
+func (g *GossipStatusSummary) CanSeeMostOfCluster() bool {
+	nodesSeenIncludingItself := g.NodesSeenWithinTimeout + 1
+	return nodesSeenIncludingItself > g.ClusterNodeCount/2
 }
 
 type GossipMessage struct {
@@ -143,7 +139,7 @@ func gossipServer(localAddress string, gossipStatus *GossipStatus) error {
 		}
 		nodeStatus := gossipStatus.NodesStatus[gossipMessage.NodeID]
 		now := time.Now()
-		nodeStatus.TimeOfLastDirectMessage = &now
+		nodeStatus.TimeOfLastMessage = &now
 		gossipStatus.NodesStatus[gossipMessage.NodeID] = nodeStatus
 		gossipStatus.Unlock()
 

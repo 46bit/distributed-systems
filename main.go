@@ -11,12 +11,10 @@ func main() {
 	// FIXME: Take config better
 	configFilePath := os.Args[1]
 	nodeID := os.Args[2]
-	gossipRegularity := 10 * time.Second
+	gossipRegularity := 1 * time.Second
 	nodeTimeoutAfter := 2 * gossipRegularity
 
-	clusterDiscovery := ClusterDiscoveryFromFile{
-		ConfigFile: configFilePath,
-	}
+	clusterDiscovery := ClusterDiscoveryFromFile{ConfigFile: configFilePath}
 	nodes, err := clusterDiscovery.DiscoverNodes()
 	if err != nil {
 		log.Fatal(fmt.Errorf("error discovering nodes: %w", err))
@@ -31,8 +29,8 @@ func main() {
 		}
 	}()
 
-	for range time.Tick(5 * time.Second) {
+	for range time.Tick(1 * time.Second) {
 		gossipSummary := gossipStatus.Summary()
-		fmt.Printf("MostNodesSeenDirectlyWithinTimeout=%v %+v\n", gossipSummary.MostNodesSeenDirectlyWithinTimeout(), gossipSummary)
+		fmt.Printf("CanSeeMostOfCluster=%v %#v\n", gossipSummary.CanSeeMostOfCluster(), gossipSummary)
 	}
 }

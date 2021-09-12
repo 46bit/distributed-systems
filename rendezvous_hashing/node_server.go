@@ -2,6 +2,7 @@ package rendezvous_hashing
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
@@ -45,12 +46,10 @@ func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
 	}
 	s.cluster.Unlock()
 
-	keys := []string{}
-	s.storage.Lock()
-	for key := range s.storage.Data {
-		keys = append(keys, key)
+	keys, err := s.storage.Keys()
+	if err != nil {
+		return fmt.Errorf("error listing keys: %w", err)
 	}
-	s.storage.Unlock()
 
 	return stream.Send(&pb.InfoResponse{
 		NodeId:      s.nodeId,
@@ -61,7 +60,11 @@ func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
 }
 
 func (s *NodeServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	value := s.storage.Get(req.Key)
+	value, err := s.storage.Get(req.Key)
+	if err != nil {
+		return nil, err
+	}
+
 	var entry *pb.Entry
 	if value != nil {
 		entry = &pb.Entry{
@@ -73,10 +76,13 @@ func (s *NodeServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetRespon
 }
 
 func (s *NodeServer) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	s.storage.Set(&Entry{
+	err := s.storage.Set(&Entry{
 		Key:   req.Entry.Key,
 		Value: req.Entry.Value,
 	})
+	if err != nil {
+		return nil, err
+	}
 	return &pb.SetResponse{}, nil
 }
 

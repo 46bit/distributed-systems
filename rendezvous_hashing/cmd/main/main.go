@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -31,7 +33,11 @@ func main() {
 	config.Initialise()
 
 	cluster := NewCluster(&config.Cluster)
-	storage := NewStorage()
+	// FIXME: Support persistent disk locations in config
+	storage, err := NewStorage("/tmp/rendezvous_hashing_badger_db_" + nodeID)
+	if err != nil {
+		log.Fatal(fmt.Errorf("error initialising db: %w", err))
+	}
 	nodeServer := NewNodeServer(nodeID, storage, cluster)
 	clusterServer := NewClusterServer(cluster)
 
@@ -45,6 +51,13 @@ func main() {
 	s := grpc.NewServer()
 	pb.RegisterNodeServer(s, nodeServer)
 	pb.RegisterClusterServer(s, clusterServer)
+
+	exitSignals := make(chan os.Signal, 1)
+	signal.Notify(exitSignals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-exitSignals
+		storage.Close()
+	}()
 
 	c, err := net.Listen("tcp", ":"+nodeID)
 	if err != nil {

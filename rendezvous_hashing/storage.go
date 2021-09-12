@@ -1,7 +1,7 @@
 package rendezvous_hashing
 
 import (
-	"sync"
+	"github.com/dgraph-io/badger/v3"
 )
 
 type Entry struct {
@@ -10,31 +10,60 @@ type Entry struct {
 }
 
 type Storage struct {
-	sync.Mutex
-
-	Data map[string]string
+	BadgerDb *badger.DB
 }
 
-func NewStorage() *Storage {
-	return &Storage{
-		Data: map[string]string{},
+func NewStorage(dbPath string) (*Storage, error) {
+	badgerDb, err := badger.Open(badger.DefaultOptions(dbPath))
+	if err != nil {
+		return nil, err
 	}
+	return &Storage{BadgerDb: badgerDb}, nil
 }
 
-func (s *Storage) Get(key string) *string {
-	s.Lock()
-	defer s.Unlock()
+func (s *Storage) Get(key string) (*string, error) {
+	var valuePointer *string
+	err := s.BadgerDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err == badger.ErrKeyNotFound {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return item.Value(func(value []byte) error {
+			valueString := string(value)
+			valuePointer = &valueString
+			return nil
+		})
+	})
+	return valuePointer, err
+}
 
-	value, ok := s.Data[key]
-	if !ok {
+func (s *Storage) Set(entry *Entry) error {
+	return s.BadgerDb.Update(func(txn *badger.Txn) error {
+		return txn.Set([]byte(entry.Key), []byte(entry.Value))
+	})
+}
+
+func (s *Storage) Keys() ([]string, error) {
+	keys := []string{}
+	err := s.BadgerDb.View(func(txn *badger.Txn) error {
+		opt := badger.DefaultIteratorOptions
+		opt.PrefetchSize = 10
+		iter := txn.NewIterator(opt)
+		defer iter.Close()
+		for iter.Rewind(); iter.Valid(); iter.Next() {
+			keys = append(keys, string(iter.Item().Key()))
+		}
 		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return &value
+	return keys, nil
 }
 
-func (s *Storage) Set(entry *Entry) {
-	s.Lock()
-	defer s.Unlock()
-
-	s.Data[entry.Key] = entry.Value
+func (s *Storage) Close() {
+	s.BadgerDb.Close()
 }

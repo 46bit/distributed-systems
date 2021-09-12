@@ -1,13 +1,12 @@
 syntax = "proto3";
-package rendezvous_hashing;
-option go_package = ".";
+package pb;
+option go_package = "../rendezvous_hashing/pb";
 
-import "google/protobuf/empty.proto";
 import "google/protobuf/duration.proto";
 
 service Node {
-  rpc Health(google.protobuf.Empty) returns (HealthResponse) {}
-  rpc Info(google.protobuf.Empty) returns (stream InfoResponse) {}
+  rpc Health(HealthRequest) returns (HealthResponse) {}
+  rpc Info(InfoRequest) returns (stream InfoResponse) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc Set(SetRequest) returns (SetResponse) {}
 }
@@ -22,12 +21,14 @@ enum Health {
   ONLINE = 1;
 }
 
+message HealthRequest { }
 message HealthResponse {
   string node_id = 1;
   Health status = 2;
   google.protobuf.Duration uptime = 3;
 }
 
+message InfoRequest { }
 message InfoResponse {
   string node_id = 1;
   google.protobuf.Duration uptime = 2;

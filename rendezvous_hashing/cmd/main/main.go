@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
+	"net"
 	"os"
 	"time"
 
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
+
+	. "github.com/46bit/distributed_systems/rendezvous_hashing"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
 )
 
 func main() {
@@ -27,6 +31,9 @@ func main() {
 	config.Initialise()
 
 	cluster := NewCluster(&config.Cluster)
+	storage := NewStorage()
+	nodeServer := NewNodeServer(nodeID, storage, cluster)
+	clusterServer := NewClusterServer(cluster)
 
 	livenessSettings := LivenessSettings{
 		GossipRegularity: 1 * time.Second,
@@ -35,16 +42,15 @@ func main() {
 	liveness := NewLiveness(nodeID, cluster, livenessSettings)
 	go liveness.Run()
 
-	storage := NewStorage()
+	s := grpc.NewServer()
+	pb.RegisterNodeServer(s, nodeServer)
+	pb.RegisterClusterServer(s, clusterServer)
 
-	mux := http.NewServeMux()
-	mux.Handle("/cluster/get", ReadHandler(cluster))
-	mux.Handle("/cluster/set", WriteHandler(cluster))
-	mux.Handle("/node/info", InfoHandler(storage, cluster))
-	mux.Handle("/node/live", LivenessHandler(liveness))
-	mux.Handle("/node/get", GetHandler(storage))
-	mux.Handle("/node/set", SetHandler(storage))
-	if err = http.ListenAndServe(":"+nodeID, mux); err != nil {
+	c, err := net.Listen("tcp", ":"+nodeID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := s.Serve(c); err != nil {
 		log.Fatal(err)
 	}
 }

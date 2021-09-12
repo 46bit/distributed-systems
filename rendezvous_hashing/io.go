@@ -1,56 +1,20 @@
-package main
+package rendezvous_hashing
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"sync/atomic"
+	"time"
 
+	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
 	"golang.org/x/sync/errgroup"
-	"gopkg.in/yaml.v2"
+	"google.golang.org/grpc"
 )
 
 type Entry struct {
 	Key   string `yaml:"key"`
 	Value string `yaml:"value"`
-}
-
-func ReadHandler(c *Cluster) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		bodyBytes, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			log.Println(fmt.Errorf("error reading from connection: %w", err))
-			return
-		}
-		var getMessage GetMessage
-		if err = yaml.Unmarshal(bodyBytes, &getMessage); err != nil {
-			log.Println(fmt.Errorf("error deserialising body: %w", err))
-		}
-
-		entry, err := Read(getMessage.Key, c)
-		if err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error reading from cluster: %w", err))
-			return
-		}
-		if entry == nil {
-			w.WriteHeader(404)
-			return
-		}
-
-		replyBytes, err := yaml.Marshal(&entry)
-		if err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error serialising reply into YAML: %w", err))
-			return
-		}
-		if _, err = w.Write(replyBytes); err != nil {
-			log.Println(fmt.Errorf("error sending reply: %w", err))
-			return
-		}
-	}
 }
 
 func Read(key string, cluster *Cluster) (*Entry, error) {
@@ -110,53 +74,24 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 }
 
 func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
-	url := fmt.Sprintf("http://%s/node/get", node.RemoteAddress)
-	messageBytes, err := yaml.Marshal(GetMessage{Key: key})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		return nil, fmt.Errorf("error serialising message into YAML: %w", err)
+		return nil, fmt.Errorf("did not connect: %v", err)
 	}
+	defer conn.Close()
 
-	r, err := http.Post(url, "application/yaml", bytes.NewBuffer(messageBytes))
-	if err != nil {
-		return nil, fmt.Errorf("error posting message to node at '%s': %w", url, err)
-	}
-	if r.StatusCode == 404 {
-		return nil, nil
-	}
-	if r.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected non-200 response code '%v'", r.StatusCode)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading from connection: %w", err)
-	}
-
-	var entry Entry
-	if err = yaml.Unmarshal(bodyBytes, &entry); err != nil {
-		return nil, fmt.Errorf("error deserialising body: %w", err)
-	}
-	return &entry, nil
-}
-
-func WriteHandler(c *Cluster) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		bodyBytes, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			log.Println(fmt.Errorf("error reading from connection: %w", err))
-			return
-		}
-		var setMessage SetMessage
-		if err = yaml.Unmarshal(bodyBytes, &setMessage); err != nil {
-			log.Println(fmt.Errorf("error deserialising body: %w", err))
-		}
-
-		if err = Write(setMessage.Entry, c); err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error writing to cluster: %w", err))
-			return
+	r, err := pb.NewNodeClient(conn).Get(ctx, &pb.GetRequest{Key: key})
+	var entry *Entry
+	if r != nil && r.Entry != nil {
+		entry = &Entry{
+			Key:   r.Entry.Key,
+			Value: r.Entry.Value,
 		}
 	}
+	return entry, err
 }
 
 func Write(entry Entry, cluster *Cluster) error {
@@ -188,18 +123,20 @@ func Write(entry Entry, cluster *Cluster) error {
 }
 
 func writeEntryToNode(entry Entry, node *NodeDescription) error {
-	url := fmt.Sprintf("http://%s/node/set", node.RemoteAddress)
-	messageBytes, err := yaml.Marshal(SetMessage{Entry: entry})
-	if err != nil {
-		return fmt.Errorf("error serialising message into YAML: %w", err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	r, err := http.Post(url, "application/yaml", bytes.NewBuffer(messageBytes))
+	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		return fmt.Errorf("error posting message to node at '%s': %w", url, err)
+		return fmt.Errorf("did not connect: %v", err)
 	}
-	if r.StatusCode != 200 {
-		return fmt.Errorf("unexpected non-200 response code '%v'", r.StatusCode)
-	}
-	return nil
+	defer conn.Close()
+
+	_, err = pb.NewNodeClient(conn).Set(ctx, &pb.SetRequest{
+		Entry: &pb.Entry{
+			Key:   entry.Key,
+			Value: entry.Value,
+		},
+	})
+	return err
 }

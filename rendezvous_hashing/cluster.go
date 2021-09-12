@@ -1,4 +1,4 @@
-package main
+package rendezvous_hashing
 
 import (
 	"sort"

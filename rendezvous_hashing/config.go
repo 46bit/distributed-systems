@@ -1,4 +1,4 @@
-package main
+package rendezvous_hashing
 
 import (
 	"github.com/spaolacci/murmur3"

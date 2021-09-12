@@ -1,15 +1,14 @@
-package main
+package rendezvous_hashing
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
+	"google.golang.org/grpc"
 )
 
 type LivenessSettings struct {
@@ -70,50 +69,6 @@ func (l *Liveness) Run() {
 	}
 }
 
-func LivenessHandler(l *Liveness) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// FIXME: Configure aggressive timeouts etc
-		bodyBytes, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error reading from connection: %w", err))
-			return
-		}
-
-		var livenessMessage livenessMessage
-		if err = yaml.Unmarshal(bodyBytes, &livenessMessage); err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error deserialising body: %w", err))
-		}
-
-		// FIXME: Authenticate nodes with Mutual TLS?
-		l.Lock()
-		_, ok := l.NodesLastSeen[livenessMessage.NodeID]
-		if !ok {
-			l.Unlock()
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error: received liveness message for unknown node id '%s'", livenessMessage.NodeID))
-			return
-		}
-		now := time.Now()
-		l.NodesLastSeen[livenessMessage.NodeID] = &now
-		l.Unlock()
-
-		reply := newLivenessReply(l)
-		replyBytes, err := yaml.Marshal(&reply)
-		if err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error serialising reply into YAML: %w", err))
-			return
-		}
-		if _, err = w.Write(replyBytes); err != nil {
-			w.WriteHeader(500)
-			log.Println(fmt.Errorf("error sending reply: %w", err))
-			return
-		}
-	}
-}
-
 func livenessBroadcast(l *Liveness) {
 	// FIXME: Make gossip regularity fixed so obviously safe to not lock?
 	l.Lock()
@@ -121,71 +76,33 @@ func livenessBroadcast(l *Liveness) {
 	l.Unlock()
 
 	for range time.Tick(gossipRegularity) {
-		livenessMessage := newLivenessMessage(l)
 		for _, otherNode := range l.Cluster.Nodes {
-			err := sendLivenessMessage(livenessMessage, otherNode.RemoteAddress)
+			r, err := getNodeHealth(otherNode.RemoteAddress)
 			if err != nil {
 				log.Println(fmt.Errorf("error sending liveness message to node '%s': %w", otherNode.ID, err))
+				continue
 			}
+			if r.NodeId != otherNode.ID {
+				log.Println(fmt.Errorf("health did not match node id, '%s' but expected '%s'", r.NodeId, otherNode.ID))
+				continue
+			}
+			now := time.Now()
+			l.Lock()
+			l.NodesLastSeen[otherNode.ID] = &now
+			l.Unlock()
 		}
 	}
 }
 
-type livenessMessage struct {
-	NodeID    string    `yaml:"node_id"`
-	Timestamp time.Time `yaml:"timestamp"`
-}
+func getNodeHealth(remoteAddress string) (*pb.HealthResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 
-func newLivenessMessage(l *Liveness) *livenessMessage {
-	l.Lock()
-	defer l.Unlock()
-	return &livenessMessage{
-		NodeID:    l.NodeID,
-		Timestamp: time.Now(),
-	}
-}
-
-type livenessReply struct {
-	NodeID    string    `yaml:"node_id"`
-	Timestamp time.Time `yaml:"timestamp"`
-}
-
-func newLivenessReply(l *Liveness) *livenessReply {
-	l.Lock()
-	defer l.Unlock()
-	return &livenessReply{
-		NodeID:    l.NodeID,
-		Timestamp: time.Now(),
-	}
-}
-
-func sendLivenessMessage(livenessMessage *livenessMessage, nodeAddress string) error {
-	url := fmt.Sprintf("http://%s/node/live", nodeAddress)
-	messageBytes, err := yaml.Marshal(livenessMessage)
+	conn, err := grpc.DialContext(ctx, remoteAddress, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		return fmt.Errorf("error serialising message into YAML: %w", err)
+		return nil, fmt.Errorf("did not connect: %v", err)
 	}
+	defer conn.Close()
 
-	r, err := http.Post(url, "application/json", bytes.NewBuffer(messageBytes))
-	if err != nil {
-		return fmt.Errorf("error sending gossip message to node at '%s': %w", nodeAddress, err)
-	}
-
-	bodyBytes, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("error reading from connection: %w", err)
-	}
-
-	var livenessReply livenessReply
-	if err = yaml.Unmarshal(bodyBytes, &livenessReply); err != nil {
-		return fmt.Errorf("error deserialising body: %w", err)
-	}
-
-	// FIXME: There's no real need for a reply. Just using Mutual TLS
-	// with certs containing the Node ID would be enough to be sure it is
-	// working properly.
-	if livenessReply.NodeID == "" {
-		return fmt.Errorf("liveness reply had no nodeid")
-	}
-	return nil
+	return pb.NewNodeClient(conn).Health(ctx, &pb.HealthRequest{})
 }

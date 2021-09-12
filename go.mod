@@ -1,4 +1,4 @@
-module github.com/46bit/gossip
+module github.com/46bit/distributed-systems
 
 go 1.15
 

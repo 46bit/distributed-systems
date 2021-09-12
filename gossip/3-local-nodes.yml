@@ -1,0 +1,8 @@
+---
+nodes:
+  - id: 8001
+    remote_address: :8001
+  - id: 8002
+    remote_address: :8002
+  - id: 8003
+    remote_address: :8003

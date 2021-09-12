@@ -78,7 +78,7 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	return entry, err
 }
 
-func readEntryFromNode(key string, node *Node) (*Entry, error) {
+func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
 	url := fmt.Sprintf("http://%s/node/get", node.RemoteAddress)
 	messageBytes, err := yaml.Marshal(GetMessage{Key: key})
 	if err != nil {
@@ -151,7 +151,7 @@ func Write(entry Entry, cluster *Cluster) error {
 	return nil
 }
 
-func writeEntryToNode(entry Entry, node *Node) error {
+func writeEntryToNode(entry Entry, node *NodeDescription) error {
 	url := fmt.Sprintf("http://%s/node/set", node.RemoteAddress)
 	messageBytes, err := yaml.Marshal(SetMessage{Entry: entry})
 	if err != nil {

@@ -35,7 +35,7 @@ func NewLiveness(nodeID string, cluster *Cluster, settings LivenessSettings) *Li
 		LivenessSettings: settings,
 	}
 	// FIXME: Support `Cluster` adding/removing nodes
-	for _, node := range cluster.KnownNodes {
+	for _, node := range cluster.Nodes {
 		liveness.NodesLastSeen[node.ID] = nil
 	}
 	return liveness
@@ -46,7 +46,7 @@ func (l *Liveness) Run() {
 	for range time.Tick(1 * time.Second) {
 		l.Lock()
 		l.Cluster.Lock()
-		for _, node := range l.Cluster.KnownNodes {
+		for _, node := range l.Cluster.Nodes {
 			// FIXME: Handle nodes being added/removed from Cluster
 			lastSeen, ok := l.NodesLastSeen[node.ID]
 			if !ok {
@@ -57,7 +57,7 @@ func (l *Liveness) Run() {
 			} else {
 				age := time.Now().Sub(*lastSeen)
 				if age < l.NodeTimeoutAfter {
-					l.Cluster.OnlineNodes[node.ID] = node
+					l.Cluster.OnlineNodes[node.ID] = true
 					fmt.Printf("LIVENESS: %s seen recently\n", node.ID)
 				} else {
 					delete(l.Cluster.OnlineNodes, node.ID)
@@ -122,7 +122,7 @@ func livenessBroadcast(l *Liveness) {
 
 	for range time.Tick(gossipRegularity) {
 		livenessMessage := newLivenessMessage(l)
-		for _, otherNode := range l.Cluster.KnownNodes {
+		for _, otherNode := range l.Cluster.Nodes {
 			err := sendLivenessMessage(livenessMessage, otherNode.RemoteAddress)
 			if err != nil {
 				log.Println(fmt.Errorf("error sending liveness message to node '%s': %w", otherNode.ID, err))

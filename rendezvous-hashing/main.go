@@ -24,6 +24,7 @@ func main() {
 	if err = yaml.Unmarshal(yamlBytes, &config); err != nil {
 		log.Fatal(fmt.Errorf("error deserialising config file: %w", err))
 	}
+	config.Initialise()
 
 	cluster := NewCluster(&config.Cluster)
 

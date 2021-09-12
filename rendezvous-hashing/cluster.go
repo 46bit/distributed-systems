@@ -7,48 +7,29 @@ import (
 	"github.com/spaolacci/murmur3"
 )
 
-type Node struct {
-	ID            string
-	Hash          uint64
-	RemoteAddress string
-}
-
 type Cluster struct {
 	sync.Mutex
+	ClusterDescription
 
-	Seed         uint32
-	ReplicaCount int
-	KnownNodes   map[string]*Node
-	OnlineNodes  map[string]*Node
+	OnlineNodes map[string]bool
 }
 
 func NewCluster(clusterDesc *ClusterDescription) *Cluster {
-	nodes := make(map[string]*Node, len(clusterDesc.Nodes))
-	for _, nodeDesc := range clusterDesc.Nodes {
-		nodes[nodeDesc.ID] = &Node{
-			ID:            nodeDesc.ID,
-			Hash:          murmur3.Sum64WithSeed([]byte(nodeDesc.ID), clusterDesc.Seed),
-			RemoteAddress: nodeDesc.RemoteAddress,
-		}
-	}
-
 	return &Cluster{
-		Seed:         clusterDesc.Seed,
-		ReplicaCount: clusterDesc.ReplicaCount,
-		KnownNodes:   nodes,
-		OnlineNodes:  map[string]*Node{},
+		ClusterDescription: *clusterDesc,
+		OnlineNodes:        map[string]bool{},
 	}
 }
 
 func (c *Cluster) MostOfClusterIsOnline() bool {
 	c.Lock()
 	defer c.Unlock()
-	return len(c.OnlineNodes) > len(c.KnownNodes)/2
+	return len(c.OnlineNodes) > len(c.Nodes)/2
 }
 
 type FoundNode struct {
 	CombinedHash uint64
-	Node         *Node
+	Node         *NodeDescription
 }
 
 func (c *Cluster) FindNodesForKey(key string) []FoundNode {
@@ -62,9 +43,10 @@ func (c *Cluster) FindNodesForKey(key string) []FoundNode {
 	numberOfOnlineNodes := len(c.OnlineNodes)
 	combinedHashToNode := make(map[uint64]string, numberOfOnlineNodes)
 	combinedHashes := []uint64{}
-	for _, node := range c.OnlineNodes {
+	for nodeId, _ := range c.OnlineNodes {
+		node := c.Nodes[nodeId]
 		combinedHash := keyHash ^ node.Hash
-		combinedHashToNode[combinedHash] = node.ID
+		combinedHashToNode[combinedHash] = nodeId
 		combinedHashes = append(combinedHashes, combinedHash)
 	}
 	// Sort combined hashes into descending order
@@ -75,7 +57,7 @@ func (c *Cluster) FindNodesForKey(key string) []FoundNode {
 		combinedHash := combinedHashes[i]
 		bestNodes[i] = FoundNode{
 			CombinedHash: combinedHash,
-			Node:         c.OnlineNodes[combinedHashToNode[combinedHash]],
+			Node:         c.Nodes[combinedHashToNode[combinedHash]],
 		}
 	}
 	return bestNodes

@@ -21,12 +21,6 @@ func NewCluster(clusterDesc *ClusterDescription) *Cluster {
 	}
 }
 
-func (c *Cluster) MostOfClusterIsOnline() bool {
-	c.Lock()
-	defer c.Unlock()
-	return len(c.OnlineNodes) > len(c.Nodes)/2
-}
-
 type FoundNode struct {
 	CombinedHash uint64
 	Node         *NodeDescription
@@ -40,13 +34,12 @@ func (c *Cluster) FindNodesForKey(key string) []FoundNode {
 	keyHash := murmur3.Sum64WithSeed([]byte(key), c.Seed)
 
 	// FIXME: Optimise? Avoid allocations, etc
-	numberOfOnlineNodes := len(c.OnlineNodes)
-	combinedHashToNode := make(map[uint64]string, numberOfOnlineNodes)
+	numberOfNodes := len(c.Nodes)
+	combinedHashToNode := make(map[uint64]*NodeDescription, numberOfNodes)
 	combinedHashes := []uint64{}
-	for nodeId, _ := range c.OnlineNodes {
-		node := c.Nodes[nodeId]
+	for _, node := range c.Nodes {
 		combinedHash := keyHash ^ node.Hash
-		combinedHashToNode[combinedHash] = nodeId
+		combinedHashToNode[combinedHash] = node
 		combinedHashes = append(combinedHashes, combinedHash)
 	}
 	// Sort combined hashes into descending order
@@ -57,7 +50,7 @@ func (c *Cluster) FindNodesForKey(key string) []FoundNode {
 		combinedHash := combinedHashes[i]
 		bestNodes[i] = FoundNode{
 			CombinedHash: combinedHash,
-			Node:         c.Nodes[combinedHashToNode[combinedHash]],
+			Node:         combinedHashToNode[combinedHash],
 		}
 	}
 	return bestNodes

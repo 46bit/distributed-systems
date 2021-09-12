@@ -53,10 +53,6 @@ func ReadHandler(c *Cluster) http.HandlerFunc {
 }
 
 func Read(key string, cluster *Cluster) (*Entry, error) {
-	if !cluster.MostOfClusterIsOnline() {
-		return nil, fmt.Errorf("cannot contact more than 50%% of nodes")
-	}
-
 	chosenReplicas := cluster.FindNodesForKey(key)
 	if len(chosenReplicas) == 0 {
 		return nil, fmt.Errorf("no nodes found for key")
@@ -72,8 +68,8 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	}
 
 	if err != nil {
-		// FIXME: Return all errors not just final one
-		return nil, fmt.Errorf("read failed from all replicas: %w", err)
+		// FIXME: Return all errors not just final one?
+		return nil, fmt.Errorf("read failed from all replicas, last error was: %w", err)
 	}
 	return entry, err
 }
@@ -129,10 +125,6 @@ func WriteHandler(c *Cluster) http.HandlerFunc {
 }
 
 func Write(entry Entry, cluster *Cluster) error {
-	if !cluster.MostOfClusterIsOnline() {
-		return fmt.Errorf("cannot contact more than 50%% of nodes")
-	}
-
 	chosenReplicas := cluster.FindNodesForKey(entry.Key)
 	if len(chosenReplicas) == 0 {
 		return fmt.Errorf("no nodes found to accept key")

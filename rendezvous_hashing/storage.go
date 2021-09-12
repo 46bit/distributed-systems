@@ -4,6 +4,11 @@ import (
 	"sync"
 )
 
+type Entry struct {
+	Key   string `yaml:"key"`
+	Value string `yaml:"value"`
+}
+
 type Storage struct {
 	sync.Mutex
 

@@ -140,8 +140,9 @@ func Write(entry Entry, cluster *Cluster) error {
 
 	g := new(errgroup.Group)
 	for _, chosenReplica := range chosenReplicas {
+		node := chosenReplica.Node
 		g.Go(func() error {
-			return writeEntryToNode(entry, chosenReplica.Node)
+			return writeEntryToNode(entry, node)
 		})
 	}
 	if err := g.Wait(); err != nil {

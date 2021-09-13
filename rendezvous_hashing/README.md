@@ -29,3 +29,9 @@ grpcurl -plaintext -d '{}' -proto pb/api.proto localhost:8001 pb.Node/Health
 grpcurl -plaintext -d '{"key": "a"}' -proto pb/api.proto localhost:8001 pb.Node/Get
 grpcurl -plaintext -d '{"entry": {"key": "a", "value": "a-value"}}' -proto pb/api.proto localhost:8001 pb.Node/Set
 ```
+
+Load test with `ghz` (ingress at a single node):
+
+```sh
+ghz --insecure --async --proto ./pb/api.proto --call pb.Cluster/Set -n 20000 --rps=400 -d '{"entry": {"key": "{{.UUID}}", "value": "value of {{.UUID}}"}}' localhost:8001
+```

@@ -48,19 +48,12 @@ func (l *Liveness) Run() {
 		for _, node := range l.Cluster.Nodes {
 			// FIXME: Handle nodes being added/removed from Cluster
 			lastSeen, ok := l.NodesLastSeen[node.ID]
-			if !ok {
-				log.Fatal("unimplemented")
-			}
-			if lastSeen == nil {
-				fmt.Printf("LIVENESS: %s never seen\n", node.ID)
-			} else {
+			if ok && lastSeen != nil {
 				age := time.Now().Sub(*lastSeen)
 				if age < l.NodeTimeoutAfter {
 					l.Cluster.OnlineNodes[node.ID] = true
-					fmt.Printf("LIVENESS: %s seen recently\n", node.ID)
 				} else {
 					delete(l.Cluster.OnlineNodes, node.ID)
-					fmt.Printf("LIVENESS: %s not seen recently\n", node.ID)
 				}
 			}
 		}

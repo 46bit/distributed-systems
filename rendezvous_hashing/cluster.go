@@ -17,15 +17,15 @@ import (
 
 type Cluster struct {
 	sync.Mutex
-	ClusterDescription
+	ClusterConfig
 
 	OnlineNodes map[string]bool
 }
 
-func NewCluster(clusterDesc *ClusterDescription) *Cluster {
+func NewCluster(clusterConfig *ClusterConfig) *Cluster {
 	return &Cluster{
-		ClusterDescription: *clusterDesc,
-		OnlineNodes:        map[string]bool{},
+		ClusterConfig: *clusterConfig,
+		OnlineNodes:   map[string]bool{},
 	}
 }
 

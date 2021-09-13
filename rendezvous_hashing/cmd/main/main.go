@@ -18,34 +18,42 @@ import (
 )
 
 func main() {
-	// FIXME: Take config better
-	configFilePath := os.Args[1]
-	nodeID := os.Args[2]
+	nodeConfigFilePath := os.Args[1]
+	clusterConfigFilePath := os.Args[2]
 
-	var config Config
-	yamlBytes, err := ioutil.ReadFile(configFilePath)
+	var nodeConfig NodeConfig
+	yamlBytes, err := ioutil.ReadFile(nodeConfigFilePath)
 	if err != nil {
-		log.Fatal(fmt.Errorf("error reading config file: %w", err))
+		log.Fatal(fmt.Errorf("error reading node config file: %w", err))
 	}
-	if err = yaml.Unmarshal(yamlBytes, &config); err != nil {
-		log.Fatal(fmt.Errorf("error deserialising config file: %w", err))
+	if err = yaml.Unmarshal(yamlBytes, &nodeConfig); err != nil {
+		log.Fatal(fmt.Errorf("error deserialising node config file: %w", err))
 	}
-	config.Initialise()
 
-	cluster := NewCluster(&config.Cluster)
+	var clusterConfig ClusterConfig
+	yamlBytes, err = ioutil.ReadFile(clusterConfigFilePath)
+	if err != nil {
+		log.Fatal(fmt.Errorf("error reading cluster config file: %w", err))
+	}
+	if err = yaml.Unmarshal(yamlBytes, &clusterConfig); err != nil {
+		log.Fatal(fmt.Errorf("error deserialising cluster config file: %w", err))
+	}
+	clusterConfig.Initialise()
+
+	cluster := NewCluster(&clusterConfig.Cluster)
 	// FIXME: Support persistent disk locations in config
-	storage, err := NewStorage("/tmp/rendezvous_hashing_badger_db_" + nodeID)
+	storage, err := NewStorage(nodeConfig.Node.BadgerDbFolder)
 	if err != nil {
 		log.Fatal(fmt.Errorf("error initialising db: %w", err))
 	}
-	nodeServer := NewNodeServer(nodeID, storage, cluster)
+	nodeServer := NewNodeServer(nodeConfig.Node.Id, storage, cluster)
 	clusterServer := NewClusterServer(cluster)
 
 	livenessSettings := LivenessSettings{
 		GossipRegularity: 1 * time.Second,
 		NodeTimeoutAfter: 2 * time.Second,
 	}
-	liveness := NewLiveness(nodeID, cluster, livenessSettings)
+	liveness := NewLiveness(nodeConfig.Node.Id, cluster, livenessSettings)
 	go liveness.Run()
 
 	s := grpc.NewServer()
@@ -57,9 +65,10 @@ func main() {
 	go func() {
 		<-exitSignals
 		storage.Close()
+		os.Exit(0)
 	}()
 
-	c, err := net.Listen("tcp", ":"+nodeID)
+	c, err := net.Listen("tcp", nodeConfig.Node.LocalAddress)
 	if err != nil {
 		log.Fatal(err)
 	}

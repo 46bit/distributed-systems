@@ -4,7 +4,15 @@ import (
 	"github.com/spaolacci/murmur3"
 )
 
-type Config struct {
+type NodeConfig struct {
+	Node struct {
+		Id             string `yaml:"id"`
+		LocalAddress   string `yaml:"local_address"`
+		BadgerDbFolder string `yaml:"badger_db_folder"`
+	} `yaml:"node"`
+}
+
+type ClusterConfig struct {
 	Cluster ClusterDescription `yaml:"cluster"`
 }
 
@@ -20,7 +28,7 @@ type NodeDescription struct {
 	RemoteAddress string `yaml:"remote_address"`
 }
 
-func (c *Config) Initialise() {
+func (c *ClusterConfig) Initialise() {
 	for id, node := range c.Cluster.Nodes {
 		node.ID = id
 		node.Hash = murmur3.Sum32WithSeed([]byte(id), c.Cluster.Seed)

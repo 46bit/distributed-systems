@@ -6,6 +6,14 @@ Regenerate protobuf Go code:
 protoc -I=. --go_out=. --go-grpc_out=. pb/api.proto
 ```
 
+Start a 3-node local test server:
+
+```sh
+go run ./cmd/main/main.go ./examples/3-local-nodes/node-1.yml ./examples/3-local-nodes/cluster.yml
+go run ./cmd/main/main.go ./examples/3-local-nodes/node-2.yml ./examples/3-local-nodes/cluster.yml
+go run ./cmd/main/main.go ./examples/3-local-nodes/node-3.yml ./examples/3-local-nodes/cluster.yml
+```
+
 Interact manually with the Cluster API:
 
 ```sh

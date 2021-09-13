@@ -3,9 +3,9 @@ cluster:
   seed: 0
   replica_count: 2
   nodes:
-    8001:
+    1:
       remote_address: :8001
-    8002:
+    2:
       remote_address: :8002
-    8003:
+    3:
       remote_address: :8003

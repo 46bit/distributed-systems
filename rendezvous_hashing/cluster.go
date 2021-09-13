@@ -38,15 +38,14 @@ func (c *Cluster) FindNodesForKey(key string) []FoundNode {
 	c.Lock()
 	defer c.Unlock()
 
-	// FIXME: Find a way to avoid copy here
-	keyHash := murmur3.Sum64WithSeed([]byte(key), c.Seed)
+	keyBytes := []byte(key)
 
 	// FIXME: Optimise? Avoid allocations, etc
 	numberOfNodes := len(c.Nodes)
 	combinedHashToNode := make(map[uint64]*NodeDescription, numberOfNodes)
 	combinedHashes := []uint64{}
 	for _, node := range c.Nodes {
-		combinedHash := keyHash ^ node.Hash
+		combinedHash := murmur3.Sum64WithSeed(keyBytes, node.Hash)
 		combinedHashToNode[combinedHash] = node
 		combinedHashes = append(combinedHashes, combinedHash)
 	}

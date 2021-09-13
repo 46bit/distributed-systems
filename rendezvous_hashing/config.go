@@ -16,13 +16,13 @@ type ClusterDescription struct {
 
 type NodeDescription struct {
 	ID            string
-	Hash          uint64
+	Hash          uint32
 	RemoteAddress string `yaml:"remote_address"`
 }
 
 func (c *Config) Initialise() {
 	for id, node := range c.Cluster.Nodes {
 		node.ID = id
-		node.Hash = murmur3.Sum64WithSeed([]byte(id), c.Cluster.Seed)
+		node.Hash = murmur3.Sum32WithSeed([]byte(id), c.Cluster.Seed)
 	}
 }

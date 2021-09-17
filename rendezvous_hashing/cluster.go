@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
 	"github.com/spaolacci/murmur3"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -129,7 +129,7 @@ func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
 	}
 	defer conn.Close()
 
-	r, err := pb.NewNodeClient(conn).Get(ctx, &pb.GetRequest{Key: key})
+	r, err := api.NewNodeClient(conn).Get(ctx, &api.GetRequest{Key: key})
 	var entry *Entry
 	if r != nil && r.Entry != nil {
 		entry = &Entry{
@@ -178,8 +178,8 @@ func writeEntryToNode(entry Entry, node *NodeDescription) error {
 	}
 	defer conn.Close()
 
-	_, err = pb.NewNodeClient(conn).Set(ctx, &pb.SetRequest{
-		Entry: &pb.Entry{
+	_, err = api.NewNodeClient(conn).Set(ctx, &api.SetRequest{
+		Entry: &api.Entry{
 			Key:   entry.Key,
 			Value: entry.Value,
 		},

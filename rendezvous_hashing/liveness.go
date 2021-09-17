@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
 	"google.golang.org/grpc"
 )
 
@@ -87,7 +87,7 @@ func livenessBroadcast(l *Liveness) {
 	}
 }
 
-func getNodeHealth(remoteAddress string) (*pb.HealthResponse, error) {
+func getNodeHealth(remoteAddress string) (*api.HealthResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -97,5 +97,5 @@ func getNodeHealth(remoteAddress string) (*pb.HealthResponse, error) {
 	}
 	defer conn.Close()
 
-	return pb.NewNodeClient(conn).Health(ctx, &pb.HealthRequest{})
+	return api.NewNodeClient(conn).Health(ctx, &api.HealthRequest{})
 }

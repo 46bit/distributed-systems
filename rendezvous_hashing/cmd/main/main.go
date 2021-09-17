@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	. "github.com/46bit/distributed_systems/rendezvous_hashing"
-	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
 )
 
 func main() {
@@ -55,8 +55,8 @@ func main() {
 	go liveness.Run()
 
 	s := grpc.NewServer()
-	pb.RegisterNodeServer(s, nodeServer)
-	pb.RegisterClusterServer(s, clusterServer)
+	api.RegisterNodeServer(s, nodeServer)
+	api.RegisterClusterServer(s, clusterServer)
 
 	exitSignals := make(chan os.Signal, 1)
 	signal.Notify(exitSignals, syscall.SIGINT, syscall.SIGTERM)

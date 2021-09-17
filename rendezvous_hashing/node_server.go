@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/46bit/distributed_systems/rendezvous_hashing/pb"
+	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type NodeServer struct {
-	pb.UnimplementedNodeServer
+	api.UnimplementedNodeServer
 
 	nodeId    string
 	storage   *Storage
@@ -18,7 +18,7 @@ type NodeServer struct {
 	startTime *time.Time
 }
 
-var _ pb.NodeServer = (*NodeServer)(nil)
+var _ api.NodeServer = (*NodeServer)(nil)
 
 func NewNodeServer(nodeId string, storage *Storage, cluster *Cluster) *NodeServer {
 	now := time.Now()
@@ -30,15 +30,15 @@ func NewNodeServer(nodeId string, storage *Storage, cluster *Cluster) *NodeServe
 	}
 }
 
-func (s *NodeServer) Health(ctx context.Context, _ *pb.HealthRequest) (*pb.HealthResponse, error) {
-	return &pb.HealthResponse{
+func (s *NodeServer) Health(ctx context.Context, _ *api.HealthRequest) (*api.HealthResponse, error) {
+	return &api.HealthResponse{
 		NodeId: s.nodeId,
-		Status: pb.Health_ONLINE,
+		Status: api.Health_ONLINE,
 		Uptime: durationpb.New(s.uptime()),
 	}, nil
 }
 
-func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
+func (s *NodeServer) Info(_ *api.InfoRequest, stream api.Node_InfoServer) error {
 	onlineNodes := []string{}
 	s.cluster.Lock()
 	for nodeId, _ := range s.cluster.OnlineNodes {
@@ -51,7 +51,7 @@ func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
 		return fmt.Errorf("error listing keys: %w", err)
 	}
 
-	return stream.Send(&pb.InfoResponse{
+	return stream.Send(&api.InfoResponse{
 		NodeId:      s.nodeId,
 		Uptime:      durationpb.New(s.uptime()),
 		OnlineNodes: onlineNodes,
@@ -59,23 +59,23 @@ func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
 	})
 }
 
-func (s *NodeServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
+func (s *NodeServer) Get(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
 	value, err := s.storage.Get(req.Key)
 	if err != nil {
 		return nil, err
 	}
 
-	var entry *pb.Entry
+	var entry *api.Entry
 	if value != nil {
-		entry = &pb.Entry{
+		entry = &api.Entry{
 			Key:   req.Key,
 			Value: *value,
 		}
 	}
-	return &pb.GetResponse{Entry: entry}, nil
+	return &api.GetResponse{Entry: entry}, nil
 }
 
-func (s *NodeServer) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
+func (s *NodeServer) Set(ctx context.Context, req *api.SetRequest) (*api.SetResponse, error) {
 	err := s.storage.Set(&Entry{
 		Key:   req.Entry.Key,
 		Value: req.Entry.Value,
@@ -83,7 +83,7 @@ func (s *NodeServer) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetRespon
 	if err != nil {
 		return nil, err
 	}
-	return &pb.SetResponse{}, nil
+	return &api.SetResponse{}, nil
 }
 
 func (s *NodeServer) uptime() time.Duration {

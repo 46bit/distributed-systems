@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 
 	. "github.com/46bit/distributed_systems/rendezvous_hashing"
@@ -25,12 +27,23 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cluster := NewCluster(clusterConfig)
 	// FIXME: Support persistent disk locations in config
 	storage, err := NewStorage(nodeConfig.BadgerDbFolder)
 	if err != nil {
 		log.Fatal(fmt.Errorf("error initialising db: %w", err))
 	}
+	if nodeConfig.LocalMetricsAddress == "" {
+		log.Println("Not starting metrics server because LocalMetricsAddress not configured")
+	} else {
+		SetupBadgerStorageMetrics()
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			// FIXME: Stop using fatal, everywhere. Shutdown badger gracefully!
+			log.Fatal(http.ListenAndServe(nodeConfig.LocalMetricsAddress, nil))
+		}()
+	}
+
+	cluster := NewCluster(clusterConfig)
 	nodeServer := NewNodeServer(nodeConfig.Id, storage, cluster)
 	clusterServer := NewClusterServer(cluster)
 

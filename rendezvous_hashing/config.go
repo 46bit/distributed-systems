@@ -9,9 +9,10 @@ import (
 )
 
 type NodeConfig struct {
-	Id             string `yaml:"id"`
-	LocalAddress   string `yaml:"local_address"`
-	BadgerDbFolder string `yaml:"badger_db_folder"`
+	Id                  string `yaml:"id"`
+	LocalAddress        string `yaml:"local_address"`
+	LocalMetricsAddress string `yaml:"local_metrics_address"`
+	BadgerDbFolder      string `yaml:"badger_db_folder"`
 }
 
 func LoadNodeConfig(path string) (*NodeConfig, error) {

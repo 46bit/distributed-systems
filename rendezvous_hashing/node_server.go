@@ -14,18 +14,16 @@ type NodeServer struct {
 
 	nodeId    string
 	storage   *Storage
-	cluster   *Cluster
 	startTime *time.Time
 }
 
 var _ api.NodeServer = (*NodeServer)(nil)
 
-func NewNodeServer(nodeId string, storage *Storage, cluster *Cluster) *NodeServer {
+func NewNodeServer(nodeId string, storage *Storage) *NodeServer {
 	now := time.Now()
 	return &NodeServer{
 		nodeId:    nodeId,
 		storage:   storage,
-		cluster:   cluster,
 		startTime: &now,
 	}
 }
@@ -39,23 +37,15 @@ func (s *NodeServer) Health(ctx context.Context, _ *api.HealthRequest) (*api.Hea
 }
 
 func (s *NodeServer) Info(_ *api.InfoRequest, stream api.Node_InfoServer) error {
-	onlineNodes := []string{}
-	s.cluster.Lock()
-	for nodeId, _ := range s.cluster.OnlineNodes {
-		onlineNodes = append(onlineNodes, nodeId)
-	}
-	s.cluster.Unlock()
-
 	keys, err := s.storage.Keys()
 	if err != nil {
 		return fmt.Errorf("error listing keys: %w", err)
 	}
 
 	return stream.Send(&api.InfoResponse{
-		NodeId:      s.nodeId,
-		Uptime:      durationpb.New(s.uptime()),
-		OnlineNodes: onlineNodes,
-		Keys:        keys,
+		NodeId: s.nodeId,
+		Uptime: durationpb.New(s.uptime()),
+		Keys:   keys,
 	})
 }
 

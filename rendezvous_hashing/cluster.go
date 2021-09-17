@@ -18,14 +18,11 @@ import (
 type Cluster struct {
 	sync.Mutex
 	ClusterConfig
-
-	OnlineNodes map[string]bool
 }
 
 func NewCluster(clusterConfig *ClusterConfig) *Cluster {
 	return &Cluster{
 		ClusterConfig: *clusterConfig,
-		OnlineNodes:   map[string]bool{},
 	}
 }
 

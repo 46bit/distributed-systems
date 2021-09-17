@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
@@ -46,13 +45,6 @@ func main() {
 	cluster := NewCluster(clusterConfig)
 	nodeServer := NewNodeServer(nodeConfig.Id, storage, cluster)
 	clusterServer := NewClusterServer(cluster)
-
-	livenessSettings := LivenessSettings{
-		GossipRegularity: 1 * time.Second,
-		NodeTimeoutAfter: 2 * time.Second,
-	}
-	liveness := NewLiveness(nodeConfig.Id, cluster, livenessSettings)
-	go liveness.Run()
 
 	s := grpc.NewServer()
 	pb.RegisterNodeServer(s, nodeServer)

@@ -19,13 +19,13 @@ type Cluster struct {
 	sync.Mutex
 	ClusterConfig
 
-	OnlineNodes map[string]bool
+	Connections map[string]*grpc.ClientConn
 }
 
 func NewCluster(clusterConfig *ClusterConfig) *Cluster {
 	return &Cluster{
 		ClusterConfig: *clusterConfig,
-		OnlineNodes:   map[string]bool{},
+		Connections:   map[string]*grpc.ClientConn{},
 	}
 }
 
@@ -76,7 +76,11 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			entry, err := readEntryFromNode(key, node)
+			conn, err := cluster.Conn(node.RemoteAddress)
+			if err != nil {
+				return err
+			}
+			entry, err := readEntryFromNode(key, conn)
 			if entry != nil {
 				entries <- entry
 			}
@@ -119,16 +123,8 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	return nil, fmt.Errorf("failed to read same value from enough replicas (only %d of %d)", maxTimesSeen, len(chosenReplicas))
 }
 
-func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		return nil, fmt.Errorf("did not connect: %v", err)
-	}
-	defer conn.Close()
-
+func readEntryFromNode(key string, conn *grpc.ClientConn) (*Entry, error) {
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	r, err := pb.NewNodeClient(conn).Get(ctx, &pb.GetRequest{Key: key})
 	var entry *Entry
 	if r != nil && r.Entry != nil {
@@ -151,7 +147,11 @@ func Write(entry Entry, cluster *Cluster) error {
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			err := writeEntryToNode(entry, node)
+			conn, err := cluster.Conn(node.RemoteAddress)
+			if err != nil {
+				return err
+			}
+			err = writeEntryToNode(entry, conn)
 			if err == nil {
 				atomic.AddUint64(&successfulWrites, 1)
 			}
@@ -168,21 +168,34 @@ func Write(entry Entry, cluster *Cluster) error {
 	return err
 }
 
-func writeEntryToNode(entry Entry, node *NodeDescription) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		return fmt.Errorf("did not connect: %v", err)
-	}
-	defer conn.Close()
-
-	_, err = pb.NewNodeClient(conn).Set(ctx, &pb.SetRequest{
+func writeEntryToNode(entry Entry, conn *grpc.ClientConn) error {
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err := pb.NewNodeClient(conn).Set(ctx, &pb.SetRequest{
 		Entry: &pb.Entry{
 			Key:   entry.Key,
 			Value: entry.Value,
 		},
 	})
 	return err
+}
+
+func (c *Cluster) Conn(remoteAddress string) (*grpc.ClientConn, error) {
+	c.Lock()
+	defer c.Unlock()
+
+	conn, ok := c.Connections[remoteAddress]
+	if ok {
+		return conn, nil
+	}
+
+	conn, err := connect(remoteAddress)
+	if err != nil {
+		return nil, fmt.Errorf("no existing connection to '%s' and could not open one: %w", remoteAddress, err)
+	}
+	return conn, nil
+}
+
+func connect(remoteAddress string) (*grpc.ClientConn, error) {
+	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	return grpc.DialContext(ctx, remoteAddress, grpc.WithInsecure(), grpc.WithBlock())
 }

@@ -39,23 +39,15 @@ func (s *NodeServer) Health(ctx context.Context, _ *pb.HealthRequest) (*pb.Healt
 }
 
 func (s *NodeServer) Info(_ *pb.InfoRequest, stream pb.Node_InfoServer) error {
-	onlineNodes := []string{}
-	s.cluster.Lock()
-	for nodeId, _ := range s.cluster.OnlineNodes {
-		onlineNodes = append(onlineNodes, nodeId)
-	}
-	s.cluster.Unlock()
-
 	keys, err := s.storage.Keys()
 	if err != nil {
 		return fmt.Errorf("error listing keys: %w", err)
 	}
 
 	return stream.Send(&pb.InfoResponse{
-		NodeId:      s.nodeId,
-		Uptime:      durationpb.New(s.uptime()),
-		OnlineNodes: onlineNodes,
-		Keys:        keys,
+		NodeId: s.nodeId,
+		Uptime: durationpb.New(s.uptime()),
+		Keys:   keys,
 	})
 }
 

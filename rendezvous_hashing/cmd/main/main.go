@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 
@@ -46,9 +47,13 @@ func main() {
 	nodeServer := NewNodeServer(nodeConfig.Id, storage)
 	clusterServer := NewClusterServer(cluster)
 
-	s := grpc.NewServer()
-	api.RegisterNodeServer(s, nodeServer)
-	api.RegisterClusterServer(s, clusterServer)
+	grpcServer := grpc.NewServer(
+		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+	)
+	api.RegisterNodeServer(grpcServer, nodeServer)
+	api.RegisterClusterServer(grpcServer, clusterServer)
+	grpc_prometheus.Register(grpcServer)
 
 	exitSignals := make(chan os.Signal, 1)
 	signal.Notify(exitSignals, syscall.SIGINT, syscall.SIGTERM)
@@ -62,7 +67,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := s.Serve(c); err != nil {
+	if err := grpcServer.Serve(c); err != nil {
 		log.Fatal(err)
 	}
 }

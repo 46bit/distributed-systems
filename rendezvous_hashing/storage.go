@@ -18,7 +18,7 @@ type Storage struct {
 func NewStorage(dbPath string) (*Storage, error) {
 	options := badger.DefaultOptions(dbPath)
 	// FIXME: Make this configurable
-	options.ValueLogFileSize = 64 << 20
+	options.ValueLogFileSize = 256 << 20
 
 	badgerDb, err := badger.Open(options)
 	if err != nil {

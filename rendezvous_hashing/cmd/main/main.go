@@ -48,6 +48,8 @@ func main() {
 	clusterServer := NewClusterServer(cluster)
 
 	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(64<<20),
+		grpc.MaxSendMsgSize(64<<20),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	)

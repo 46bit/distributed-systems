@@ -120,7 +120,13 @@ func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(
+		ctx,
+		node.RemoteAddress,
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20), grpc.MaxCallSendMsgSize(64<<20)),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("did not connect: %v", err)
 	}
@@ -169,7 +175,13 @@ func writeEntryToNode(entry Entry, node *NodeDescription) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, node.RemoteAddress, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.DialContext(
+		ctx,
+		node.RemoteAddress,
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20), grpc.MaxCallSendMsgSize(64<<20)),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+	)
 	if err != nil {
 		return fmt.Errorf("did not connect: %v", err)
 	}

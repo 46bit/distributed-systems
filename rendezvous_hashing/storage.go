@@ -56,7 +56,7 @@ func (s *Storage) Keys() ([]string, error) {
 	keys := []string{}
 	err := s.BadgerDb.View(func(txn *badger.Txn) error {
 		opt := badger.DefaultIteratorOptions
-		opt.PrefetchSize = 10
+		opt.PrefetchValues = false
 		iter := txn.NewIterator(opt)
 		defer iter.Close()
 		for iter.Rewind(); iter.Valid(); iter.Next() {

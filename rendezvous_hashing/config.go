@@ -12,6 +12,7 @@ type NodeConfig struct {
 	Id                  string `yaml:"id"`
 	LocalAddress        string `yaml:"local_address"`
 	LocalMetricsAddress string `yaml:"local_metrics_address"`
+	ClockEpochFilePath 	string `yaml:"clock_epoch_file_path"`
 	BadgerDbFolder      string `yaml:"badger_db_folder"`
 }
 

@@ -20,8 +20,8 @@ const _ = grpc.SupportPackageIsVersion7
 type NodeClient interface {
 	Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
 	Info(ctx context.Context, in *InfoRequest, opts ...grpc.CallOption) (Node_InfoClient, error)
-	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
+	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*NodeGetResponse, error)
+	Set(ctx context.Context, in *NodeSetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 }
 
 type nodeClient struct {
@@ -73,8 +73,8 @@ func (x *nodeInfoClient) Recv() (*InfoResponse, error) {
 	return m, nil
 }
 
-func (c *nodeClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
-	out := new(GetResponse)
+func (c *nodeClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*NodeGetResponse, error) {
+	out := new(NodeGetResponse)
 	err := c.cc.Invoke(ctx, "/api.Node/Get", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func (c *nodeClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallO
 	return out, nil
 }
 
-func (c *nodeClient) Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error) {
+func (c *nodeClient) Set(ctx context.Context, in *NodeSetRequest, opts ...grpc.CallOption) (*SetResponse, error) {
 	out := new(SetResponse)
 	err := c.cc.Invoke(ctx, "/api.Node/Set", in, out, opts...)
 	if err != nil {
@@ -97,8 +97,8 @@ func (c *nodeClient) Set(ctx context.Context, in *SetRequest, opts ...grpc.CallO
 type NodeServer interface {
 	Health(context.Context, *HealthRequest) (*HealthResponse, error)
 	Info(*InfoRequest, Node_InfoServer) error
-	Get(context.Context, *GetRequest) (*GetResponse, error)
-	Set(context.Context, *SetRequest) (*SetResponse, error)
+	Get(context.Context, *GetRequest) (*NodeGetResponse, error)
+	Set(context.Context, *NodeSetRequest) (*SetResponse, error)
 	mustEmbedUnimplementedNodeServer()
 }
 
@@ -112,10 +112,10 @@ func (UnimplementedNodeServer) Health(context.Context, *HealthRequest) (*HealthR
 func (UnimplementedNodeServer) Info(*InfoRequest, Node_InfoServer) error {
 	return status.Errorf(codes.Unimplemented, "method Info not implemented")
 }
-func (UnimplementedNodeServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
+func (UnimplementedNodeServer) Get(context.Context, *GetRequest) (*NodeGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
-func (UnimplementedNodeServer) Set(context.Context, *SetRequest) (*SetResponse, error) {
+func (UnimplementedNodeServer) Set(context.Context, *NodeSetRequest) (*SetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
 }
 func (UnimplementedNodeServer) mustEmbedUnimplementedNodeServer() {}
@@ -189,7 +189,7 @@ func _Node_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{
 }
 
 func _Node_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetRequest)
+	in := new(NodeSetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func _Node_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{
 		FullMethod: "/api.Node/Set",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServer).Set(ctx, req.(*SetRequest))
+		return srv.(NodeServer).Set(ctx, req.(*NodeSetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -352,6 +352,128 @@ var Cluster_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Set",
 			Handler:    _Cluster_Set_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "api/api.proto",
+}
+
+// ClockClient is the client API for Clock service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ClockClient interface {
+	Get(ctx context.Context, in *ClockGetRequest, opts ...grpc.CallOption) (*ClockGetResponse, error)
+	Set(ctx context.Context, in *ClockSetRequest, opts ...grpc.CallOption) (*ClockSetResponse, error)
+}
+
+type clockClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewClockClient(cc grpc.ClientConnInterface) ClockClient {
+	return &clockClient{cc}
+}
+
+func (c *clockClient) Get(ctx context.Context, in *ClockGetRequest, opts ...grpc.CallOption) (*ClockGetResponse, error) {
+	out := new(ClockGetResponse)
+	err := c.cc.Invoke(ctx, "/api.Clock/Get", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clockClient) Set(ctx context.Context, in *ClockSetRequest, opts ...grpc.CallOption) (*ClockSetResponse, error) {
+	out := new(ClockSetResponse)
+	err := c.cc.Invoke(ctx, "/api.Clock/Set", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ClockServer is the server API for Clock service.
+// All implementations must embed UnimplementedClockServer
+// for forward compatibility
+type ClockServer interface {
+	Get(context.Context, *ClockGetRequest) (*ClockGetResponse, error)
+	Set(context.Context, *ClockSetRequest) (*ClockSetResponse, error)
+	mustEmbedUnimplementedClockServer()
+}
+
+// UnimplementedClockServer must be embedded to have forward compatible implementations.
+type UnimplementedClockServer struct {
+}
+
+func (UnimplementedClockServer) Get(context.Context, *ClockGetRequest) (*ClockGetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedClockServer) Set(context.Context, *ClockSetRequest) (*ClockSetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
+}
+func (UnimplementedClockServer) mustEmbedUnimplementedClockServer() {}
+
+// UnsafeClockServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ClockServer will
+// result in compilation errors.
+type UnsafeClockServer interface {
+	mustEmbedUnimplementedClockServer()
+}
+
+func RegisterClockServer(s grpc.ServiceRegistrar, srv ClockServer) {
+	s.RegisterService(&Clock_ServiceDesc, srv)
+}
+
+func _Clock_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClockGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClockServer).Get(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.Clock/Get",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClockServer).Get(ctx, req.(*ClockGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Clock_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClockSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClockServer).Set(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/api.Clock/Set",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClockServer).Set(ctx, req.(*ClockSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Clock_ServiceDesc is the grpc.ServiceDesc for Clock service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Clock_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "api.Clock",
+	HandlerType: (*ClockServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Get",
+			Handler:    _Clock_Get_Handler,
+		},
+		{
+			MethodName: "Set",
+			Handler:    _Clock_Set_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -43,6 +43,11 @@ func main() {
 		}()
 	}
 
+	clockServer, err := NewClockServer(nodeConfig.ClockEpochFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	cluster := NewCluster(clusterConfig)
 	nodeServer := NewNodeServer(nodeConfig.Id, storage)
 	clusterServer := NewClusterServer(cluster)
@@ -53,6 +58,7 @@ func main() {
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	)
+	api.RegisterClockServer(grpcServer, clockServer)
 	api.RegisterNodeServer(grpcServer, nodeServer)
 	api.RegisterClusterServer(grpcServer, clusterServer)
 	grpc_prometheus.Register(grpcServer)

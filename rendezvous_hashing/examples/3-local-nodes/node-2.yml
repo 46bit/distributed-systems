@@ -4,3 +4,4 @@ node:
   local_address: :8002
   local_metrics_address: :9002
   badger_db_folder: /tmp/badgerdb_2
+  clock_epoch_file_path: /tmp/clock_epoch_2

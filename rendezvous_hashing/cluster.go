@@ -67,12 +67,16 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	}
 
 	clockedEntries := make(chan *api.ClockedEntry, len(chosenReplicas))
+	successfulReads := uint64(0)
 	g := new(errgroup.Group)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
 			clockedEntry, err := readEntryFromNode(key, node)
-			if clockedEntry != nil {
+			if err == nil {
+				atomic.AddUint64(&successfulReads, 1)
+			}
+			if err == nil && clockedEntry != nil {
 				clockedEntries <- clockedEntry
 			}
 			return err
@@ -83,6 +87,12 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 		log.Println(fmt.Errorf("error while reading from all replicas: %w", err))
 	}
 	close(clockedEntries)
+
+	// To write durably, we must have a majority of replicas online.
+	// FIXME: Analyse this properly
+	if successfulReads <= uint64(len(chosenReplicas) / 2) {
+		return nil, fmt.Errorf("could not read from a majority of replicas")
+	}
 
 	maxEpoch := uint64(0)
 	maxClock := uint64(0)

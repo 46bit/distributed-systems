@@ -1,7 +1,7 @@
 ---
 cluster:
   seed: 0
-  replica_count: 2
+  replica_count: 3
   nodes:
     1:
       remote_address: :8001

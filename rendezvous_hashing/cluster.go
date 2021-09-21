@@ -69,12 +69,16 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	clockedEntries := make(chan *api.ClockedEntry, len(chosenReplicas))
 	successfulReads := uint64(0)
 	g := new(errgroup.Group)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			clockedEntry, err := readEntryFromNode(key, node)
+			clockedEntry, err := readEntryFromNode(ctx, key, node)
 			if err == nil {
-				atomic.AddUint64(&successfulReads, 1)
+				newSuccessfulReads := atomic.AddUint64(&successfulReads, 1)
+				if newSuccessfulReads > uint64(len(chosenReplicas) / 2) {
+					cancel()
+				}
 			}
 			if err == nil && clockedEntry != nil {
 				clockedEntries <- clockedEntry
@@ -86,6 +90,7 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	if err != nil {
 		log.Println(fmt.Errorf("error while reading from all replicas: %w", err))
 	}
+	cancel()
 	close(clockedEntries)
 
 	// To write durably, we must have a majority of replicas online.
@@ -125,10 +130,7 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	return newestValue, nil
 }
 
-func readEntryFromNode(key string, node *NodeDescription) (*api.ClockedEntry, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func readEntryFromNode(ctx context.Context, key string, node *NodeDescription) (*api.ClockedEntry, error) {
 	conn, err := grpc.DialContext(
 		ctx,
 		node.RemoteAddress,
@@ -157,13 +159,17 @@ func Write(entry Entry, cluster *Cluster) error {
 	replicaClocks := []*api.ClockValue{}
 	successfulClockGets := uint64(0)
 	g := &errgroup.Group{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			nodeClockResponse, err := getClockFromNode(node)
+			nodeClockResponse, err := getClockFromNode(ctx, node)
 			if err == nil {
 				replicaClocks = append(replicaClocks, nodeClockResponse.Value)
-				atomic.AddUint64(&successfulClockGets, 1)
+				newSuccessfulClockGets := atomic.AddUint64(&successfulClockGets, 1)
+				if newSuccessfulClockGets > uint64(len(chosenReplicas) / 2) {
+					cancel()
+				}
 			}
 			return err
 		})
@@ -171,6 +177,7 @@ func Write(entry Entry, cluster *Cluster) error {
 	if err := g.Wait(); err != nil {
 		log.Println("error getting replica clocks: %w", err)
 	}
+	cancel()
 
 	// To write durably, we must have a majority of replicas online.
 	// FIXME: Analyse this properly
@@ -196,12 +203,16 @@ func Write(entry Entry, cluster *Cluster) error {
 
 	successfulClockSets := uint64(0)
 	g = &errgroup.Group{}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			err := setClockOnNode(clockValue, node)
+			err := setClockOnNode(ctx, clockValue, node)
 			if err == nil {
-				atomic.AddUint64(&successfulClockSets, 1)
+				newSuccessfulClockSets := atomic.AddUint64(&successfulClockSets, 1)
+				if newSuccessfulClockSets > uint64(len(chosenReplicas) / 2) {
+					cancel()
+				}
 			}
 			return err
 		})
@@ -209,6 +220,7 @@ func Write(entry Entry, cluster *Cluster) error {
 	if err := g.Wait(); err != nil {
 		log.Println("error setting replica clocks: %w", err)
 	}
+	cancel()
 
 	// To write durably, we must have a majority of replicas online.
 	// FIXME: Analyse this properly
@@ -225,17 +237,22 @@ func Write(entry Entry, cluster *Cluster) error {
 	}
 	successfulWrites := uint64(0)
 	g = &errgroup.Group{}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			err := writeEntryToNode(clockedEntry, node)
+			err := writeEntryToNode(ctx, clockedEntry, node)
 			if err == nil {
-				atomic.AddUint64(&successfulWrites, 1)
+				newSuccessfulWrites := atomic.AddUint64(&successfulWrites, 1)
+				if newSuccessfulWrites > uint64(len(chosenReplicas) / 2) {
+					cancel()
+				}
 			}
 			return err
 		})
 	}
 	err := g.Wait()
+	cancel()
 	if successfulWrites > uint64(len(chosenReplicas)/2) {
 		if err != nil {
 			log.Println(err)
@@ -245,10 +262,7 @@ func Write(entry Entry, cluster *Cluster) error {
 	return err
 }
 
-func writeEntryToNode(clockedEntry api.ClockedEntry, node *NodeDescription) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func writeEntryToNode(ctx context.Context, clockedEntry api.ClockedEntry, node *NodeDescription) error {
 	conn, err := grpc.DialContext(
 		ctx,
 		node.RemoteAddress,
@@ -267,10 +281,7 @@ func writeEntryToNode(clockedEntry api.ClockedEntry, node *NodeDescription) erro
 	return err
 }
 
-func getClockFromNode(node *NodeDescription) (*api.ClockGetResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func getClockFromNode(ctx context.Context, node *NodeDescription) (*api.ClockGetResponse, error) {
 	conn, err := grpc.DialContext(
 		ctx,
 		node.RemoteAddress,
@@ -286,10 +297,7 @@ func getClockFromNode(node *NodeDescription) (*api.ClockGetResponse, error) {
 	return api.NewClockClient(conn).Get(ctx, &api.ClockGetRequest{})
 }
 
-func setClockOnNode(clockValue api.ClockValue, node *NodeDescription) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func setClockOnNode(ctx context.Context, clockValue api.ClockValue, node *NodeDescription) error {
 	conn, err := grpc.DialContext(
 		ctx,
 		node.RemoteAddress,

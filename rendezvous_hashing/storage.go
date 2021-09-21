@@ -1,9 +1,14 @@
 package rendezvous_hashing
 
 import (
+	"fmt"
+
+	"github.com/golang/protobuf/proto"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
 )
 
 type Entry struct {
@@ -27,8 +32,8 @@ func NewStorage(dbPath string) (*Storage, error) {
 	return &Storage{BadgerDb: badgerDb}, nil
 }
 
-func (s *Storage) Get(key string) (*string, error) {
-	var valuePointer *string
+func (s *Storage) Get(key string) (*api.ClockedEntry, error) {
+	var clockedEntryPointer *api.ClockedEntry
 	err := s.BadgerDb.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err == badger.ErrKeyNotFound {
@@ -37,18 +42,26 @@ func (s *Storage) Get(key string) (*string, error) {
 		if err != nil {
 			return err
 		}
-		return item.Value(func(value []byte) error {
-			valueString := string(value)
-			valuePointer = &valueString
+		return item.Value(func(bytes []byte) error {
+			var clockedEntry api.ClockedEntry
+			if err := proto.Unmarshal(bytes, &clockedEntry); err != nil {
+				return fmt.Errorf("error deserialising bytes into clocked entry: %w", err)
+			}
+			// FIXME: Optional debug check that the key matches?
+			clockedEntryPointer = &clockedEntry
 			return nil
 		})
 	})
-	return valuePointer, err
+	return clockedEntryPointer, err
 }
 
-func (s *Storage) Set(entry *Entry) error {
+func (s *Storage) Set(value *api.ClockedEntry) error {
+	bytes, err := proto.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("error serialising clocked entry to bytes: %w", err)
+	}
 	return s.BadgerDb.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(entry.Key), []byte(entry.Value))
+		return txn.Set([]byte(value.Entry.Key), bytes)
 	})
 }
 

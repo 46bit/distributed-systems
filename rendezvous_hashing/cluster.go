@@ -66,16 +66,14 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 		return nil, fmt.Errorf("no nodes found for key")
 	}
 
-	// Try to read from all replicas; succeed if more than half respond the same
-	// FIXME: Implement conflict resolution so they don't have to respond the same
-	entries := make(chan *Entry, len(chosenReplicas))
+	clockedEntries := make(chan *api.ClockedEntry, len(chosenReplicas))
 	g := new(errgroup.Group)
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			entry, err := readEntryFromNode(key, node)
-			if entry != nil {
-				entries <- entry
+			clockedEntry, err := readEntryFromNode(key, node)
+			if clockedEntry != nil {
+				clockedEntries <- clockedEntry
 			}
 			return err
 		})
@@ -84,39 +82,40 @@ func Read(key string, cluster *Cluster) (*Entry, error) {
 	if err != nil {
 		log.Println(fmt.Errorf("error while reading from all replicas: %w", err))
 	}
-	close(entries)
+	close(clockedEntries)
 
-	// FIXME: Go may be a painful language sometimes but there is surely
-	// something I can do to improve this code
-	valuesSeen := map[string]int{}
-	for entry := range entries {
-		if _, ok := valuesSeen[entry.Value]; !ok {
-			valuesSeen[entry.Value] = 1
-		} else {
-			valuesSeen[entry.Value] += 1
+	maxEpoch := uint64(0)
+	maxClock := uint64(0)
+	var newestValue *Entry
+	for clockedEntry := range clockedEntries {
+		newest := false
+		if clockedEntry.Clock.Epoch > maxEpoch {
+			maxEpoch = clockedEntry.Clock.Epoch
+			maxClock = clockedEntry.Clock.Clock
+			newest = true
+		} else if clockedEntry.Clock.Epoch == maxEpoch && clockedEntry.Clock.Clock > maxClock {
+			maxClock = clockedEntry.Clock.Clock
+			newest = true
+		}
+
+		if newest {
+			// FIXME: Suggestion in http://rystsov.info/2018/10/01/tso.html to use 
+			// a hash of the current cluster node's ID as a consistent tiebreak for if 
+			// multiple clocked values have the same clock
+			newestValue = &Entry{
+				Key: clockedEntry.Entry.Key,
+				Value: clockedEntry.Entry.Value,
+			}
 		}
 	}
-	if len(valuesSeen) == 0 {
-		return nil, err
+
+	if newestValue == nil {
+		return nil, fmt.Errorf("no value found")
 	}
-	maxTimesSeen := 0
-	maxSeenValue := ""
-	for valueSeen, timesSeen := range valuesSeen {
-		if timesSeen > maxTimesSeen {
-			maxTimesSeen = timesSeen
-			maxSeenValue = valueSeen
-		}
-	}
-	if maxTimesSeen > len(chosenReplicas)/2 {
-		return &Entry{
-			Key:   key,
-			Value: maxSeenValue,
-		}, nil
-	}
-	return nil, fmt.Errorf("failed to read same value from enough replicas (only %d of %d)", maxTimesSeen, len(chosenReplicas))
+	return newestValue, nil
 }
 
-func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
+func readEntryFromNode(key string, node *NodeDescription) (*api.ClockedEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -133,14 +132,10 @@ func readEntryFromNode(key string, node *NodeDescription) (*Entry, error) {
 	defer conn.Close()
 
 	r, err := api.NewNodeClient(conn).Get(ctx, &api.GetRequest{Key: key})
-	var entry *Entry
-	if r != nil && r.Entry != nil {
-		entry = &Entry{
-			Key:   r.Entry.Key,
-			Value: r.Entry.Value,
-		}
+	if r == nil {
+		return nil, nil
 	}
-	return entry, err
+	return r.ClockedEntry, nil
 }
 
 func Write(entry Entry, cluster *Cluster) error {
@@ -149,12 +144,81 @@ func Write(entry Entry, cluster *Cluster) error {
 		return fmt.Errorf("no nodes found to accept key")
 	}
 
-	successfulWrites := uint64(0)
-	g := new(errgroup.Group)
+	replicaClocks := []*api.ClockValue{}
+	successfulClockGets := uint64(0)
+	g := &errgroup.Group{}
 	for _, chosenReplica := range chosenReplicas {
 		node := chosenReplica.Node
 		g.Go(func() error {
-			err := writeEntryToNode(entry, node)
+			nodeClockResponse, err := getClockFromNode(node)
+			if err == nil {
+				replicaClocks = append(replicaClocks, nodeClockResponse.Value)
+				atomic.AddUint64(&successfulClockGets, 1)
+			}
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		log.Println("error getting replica clocks: %w", err)
+	}
+
+	// To write durably, we must have a majority of replicas online.
+	// FIXME: Analyse this properly
+	if successfulClockGets <= uint64(len(chosenReplicas) / 2) {
+		return fmt.Errorf("could not get clock from a majority of replicas")
+	}
+
+	maxEpoch := uint64(0)
+	maxClock := uint64(0)
+	for _, replicaClock := range replicaClocks {
+		if replicaClock.Epoch > maxEpoch {
+			maxEpoch = replicaClock.Epoch
+			maxClock = replicaClock.Clock
+		} else if replicaClock.Epoch == maxEpoch && replicaClock.Clock > maxClock {
+			maxClock = replicaClock.Clock
+		}
+	}
+	// FIXME: Add extra defensive check that epoch and clock not zero
+	clockValue := api.ClockValue{
+		Epoch: maxEpoch,
+		Clock: maxClock + 1,
+	}
+
+	successfulClockSets := uint64(0)
+	g = &errgroup.Group{}
+	for _, chosenReplica := range chosenReplicas {
+		node := chosenReplica.Node
+		g.Go(func() error {
+			err := setClockOnNode(clockValue, node)
+			if err == nil {
+				atomic.AddUint64(&successfulClockSets, 1)
+			}
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		log.Println("error setting replica clocks: %w", err)
+	}
+
+	// To write durably, we must have a majority of replicas online.
+	// FIXME: Analyse this properly
+	if successfulClockSets <= uint64(len(chosenReplicas) / 2) {
+		return fmt.Errorf("could not set clock on a majority of replicas")
+	}
+
+	clockedEntry := api.ClockedEntry{
+		Entry: &api.Entry{
+			Key: entry.Key,
+			Value: entry.Value,
+		},
+		Clock: &clockValue,
+	}
+	successfulWrites := uint64(0)
+	g = &errgroup.Group{}
+	for _, chosenReplica := range chosenReplicas {
+		node := chosenReplica.Node
+		g.Go(func() error {
+			err := writeEntryToNode(clockedEntry, node)
 			if err == nil {
 				atomic.AddUint64(&successfulWrites, 1)
 			}
@@ -171,7 +235,7 @@ func Write(entry Entry, cluster *Cluster) error {
 	return err
 }
 
-func writeEntryToNode(entry Entry, node *NodeDescription) error {
+func writeEntryToNode(clockedEntry api.ClockedEntry, node *NodeDescription) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -187,11 +251,49 @@ func writeEntryToNode(entry Entry, node *NodeDescription) error {
 	}
 	defer conn.Close()
 
-	_, err = api.NewNodeClient(conn).Set(ctx, &api.SetRequest{
-		Entry: &api.Entry{
-			Key:   entry.Key,
-			Value: entry.Value,
-		},
+	_, err = api.NewNodeClient(conn).Set(ctx, &api.NodeSetRequest{
+		ClockedEntry: &clockedEntry,
+	})
+	return err
+}
+
+func getClockFromNode(node *NodeDescription) (*api.ClockGetResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		node.RemoteAddress,
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20), grpc.MaxCallSendMsgSize(64<<20)),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("did not connect: %v", err)
+	}
+	defer conn.Close()
+
+	return api.NewClockClient(conn).Get(ctx, &api.ClockGetRequest{})
+}
+
+func setClockOnNode(clockValue api.ClockValue, node *NodeDescription) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		node.RemoteAddress,
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64<<20), grpc.MaxCallSendMsgSize(64<<20)),
+		grpc.WithInsecure(),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return fmt.Errorf("did not connect: %v", err)
+	}
+	defer conn.Close()
+
+	_, err = api.NewClockClient(conn).Set(ctx, &api.ClockSetRequest{
+		Value: &clockValue,
 	})
 	return err
 }

@@ -49,27 +49,16 @@ func (s *NodeServer) Info(_ *api.InfoRequest, stream api.Node_InfoServer) error 
 	})
 }
 
-func (s *NodeServer) Get(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
-	value, err := s.storage.Get(req.Key)
+func (s *NodeServer) Get(ctx context.Context, req *api.GetRequest) (*api.NodeGetResponse, error) {
+	clockedEntry, err := s.storage.Get(req.Key)
 	if err != nil {
 		return nil, err
 	}
-
-	var entry *api.Entry
-	if value != nil {
-		entry = &api.Entry{
-			Key:   req.Key,
-			Value: *value,
-		}
-	}
-	return &api.GetResponse{Entry: entry}, nil
+	return &api.NodeGetResponse{ClockedEntry: clockedEntry}, nil
 }
 
-func (s *NodeServer) Set(ctx context.Context, req *api.SetRequest) (*api.SetResponse, error) {
-	err := s.storage.Set(&Entry{
-		Key:   req.Entry.Key,
-		Value: req.Entry.Value,
-	})
+func (s *NodeServer) Set(ctx context.Context, req *api.NodeSetRequest) (*api.SetResponse, error) {
+	err := s.storage.Set(req.ClockedEntry)
 	if err != nil {
 		return nil, err
 	}

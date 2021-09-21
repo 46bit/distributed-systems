@@ -6,6 +6,7 @@ replace github.com/dgraph-io/ristretto v0.1.0 => github.com/46bit/ristretto v0.1
 
 require (
 	github.com/dgraph-io/badger/v3 v3.2103.1
+	github.com/golang/protobuf v1.5.0
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/spaolacci/murmur3 v1.1.0

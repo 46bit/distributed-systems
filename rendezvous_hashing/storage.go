@@ -25,7 +25,7 @@ func NewStorage(dbPath string) (*Storage, error) {
 	// FIXME: Make this configurable
 	options.ValueLogFileSize = 256 << 20
 
-	badgerDb, err := badger.Open(options.WithLoggingLevel(badger.DEBUG))
+	badgerDb, err := badger.Open(options)
 	if err != nil {
 		return nil, err
 	}

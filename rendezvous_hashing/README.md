@@ -1,4 +1,24 @@
-# Key-value store based upon Rendezvous Hashing
+# Leaderless Key-Value Store
+
+This repo contains an example leaderless key-value store based on:
+
+- [Rendezvous Hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) to efficiently shard keys
+- [Quorum Consistency](https://code.likeagirl.io/distributed-computing-quorum-consistency-in-replication-96e64f7b5c6) to tradeoff good consistency vs tolerating node failures
+- [Quorum Clocks](http://rystsov.info/2018/10/01/tso.html) to logically order the data
+
+Nodes are homogenous. Every node acts as both storage and coordinator. This means that any node can accept external queries.
+
+APIs are implemented with [gRPC](https://grpc.io) and [Protobuf](https://developers.google.com/protocol-buffers). Nodes store their data using [BadgerDB](https://github.com/dgraph-io/badger).
+
+## Status
+
+A 5-node cluster can accept 1krps of 10KB writes with minimal errors. This is with 2 EPYC CPU cores per node. Performance appeared to be CPU-bound so higher performance should be easily obtainable.
+
+This is not intended as a production commercial project. It is merely for learning. There are numerous `FIXME` comments throughout the codebase. Many suggest performance improvements but others deal with rare errorcases.
+
+This does not implement data re-replication. Nodes that have been offline and missed some writes do not get that missing data synced to them. Similarly new nodes do not get existing data. This could be added.
+
+## Notes
 
 Regenerate protobuf Go code:
 
@@ -30,8 +50,8 @@ grpcurl -plaintext -d '{"key": "a"}' -proto api/api.proto localhost:8001 api.Nod
 grpcurl -plaintext -d '{"entry": {"key": "a", "value": "a-value"}}' -proto api/api.proto localhost:8001 api.Node/Set
 ```
 
-Load test with `ghz` (ingress at a single node):
+Load test with `ghz`:
 
 ```sh
-ghz --insecure --async --proto ./api/api.proto --call api.Cluster/Set -n 20000 --rps=400 -d '{"entry": {"key": "{{.UUID}}", "value": "value of {{.UUID}}"}}' localhost:8001
+ghz --rps=250 --duration 15s --skipFirst 1000 --insecure --connections 5 --proto ./api/api.proto --call api.Cluster/Set -d '{"entry": {"key": "{{.UUID}}", "value": "{{randomString 1024}}"}}' --lb-strategy=round_robin dns:///rz.46b.it:80
 ```

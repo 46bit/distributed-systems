@@ -211,12 +211,8 @@ func getQuorateClock(nodes []FoundNode) (*api.ClockValue, error) {
 			fmt.Println(fmt.Errorf("warning getting clock from node: %w", err))
 			return false
 		}
-		select {
-		case <-ctx.Done():
-			return true
-		case nodeClocks <- nodeClock.Value:
-			return true
-		}
+		nodeClocks <- nodeClock.Value
+		return true
 	})
 	cancel()
 	if !quorate {
@@ -267,12 +263,12 @@ func getQuorateValue(key string, nodes []FoundNode) (*api.ClockedEntry, error) {
 			fmt.Println(fmt.Errorf("warning getting value from node: %w", err))
 			return false
 		}
-		select {
-		case <-ctx.Done():
-			return true
-		case nodeEntries <- nodeEntry:
-			return true
+		// FIXME: Record and count 404s? To allow "not found" as the quorate answer?
+		if nodeEntry == nil {
+			return false
 		}
+		nodeEntries <- nodeEntry
+		return true
 	})
 	cancel()
 	if !quorate {

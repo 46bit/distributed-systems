@@ -1,0 +1,3 @@
+[submodule "leaderless-key-value-store"]
+	path = leaderless-key-value-store
+	url = https://github.com/46bit/leaderless-key-value-store.git

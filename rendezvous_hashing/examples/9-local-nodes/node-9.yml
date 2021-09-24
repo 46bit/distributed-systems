@@ -1,5 +1,0 @@
----
-node:
-  id: 9
-  local_address: :8009
-  badger_db_folder: /tmp/badgerdb_9

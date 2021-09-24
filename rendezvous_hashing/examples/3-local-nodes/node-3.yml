@@ -1,7 +1,0 @@
----
-node:
-  id: 3
-  local_address: :8003
-  local_metrics_address: :9003
-  badger_db_folder: /tmp/badgerdb_3
-  clock_epoch_file_path: /tmp/clock_epoch_3

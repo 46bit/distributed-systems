@@ -39,7 +39,9 @@ func (s *NodeServer) Health(ctx context.Context, _ *api.HealthRequest) (*api.Hea
 func (s *NodeServer) Info(_ *api.InfoRequest, stream api.Node_InfoServer) error {
 	keys, err := s.storage.Keys()
 	if err != nil {
-		return fmt.Errorf("error listing keys: %w", err)
+		err = fmt.Errorf("error listing keys: %w", err)
+		fmt.Println(err)
+		return err
 	}
 
 	return stream.Send(&api.InfoResponse{
@@ -52,6 +54,7 @@ func (s *NodeServer) Info(_ *api.InfoRequest, stream api.Node_InfoServer) error 
 func (s *NodeServer) Get(ctx context.Context, req *api.GetRequest) (*api.NodeGetResponse, error) {
 	clockedEntry, err := s.storage.Get(req.Key)
 	if err != nil {
+		fmt.Println(fmt.Errorf("error getting value from node: %w", err))
 		return nil, err
 	}
 	return &api.NodeGetResponse{ClockedEntry: clockedEntry}, nil
@@ -60,6 +63,7 @@ func (s *NodeServer) Get(ctx context.Context, req *api.GetRequest) (*api.NodeGet
 func (s *NodeServer) Set(ctx context.Context, req *api.NodeSetRequest) (*api.SetResponse, error) {
 	err := s.storage.Set(req.ClockedEntry)
 	if err != nil {
+		fmt.Println(fmt.Errorf("error setting value on node: %w", err))
 		return nil, err
 	}
 	return &api.SetResponse{}, nil

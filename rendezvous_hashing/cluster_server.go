@@ -1,6 +1,7 @@
 package rendezvous_hashing
 
 import (
+	"fmt"
 	"context"
 
 	"github.com/46bit/distributed_systems/rendezvous_hashing/api"
@@ -20,6 +21,9 @@ func NewClusterServer(cluster *Cluster) *ClusterServer {
 
 func (s *ClusterServer) Get(ctx context.Context, req *api.GetRequest) (*api.GetResponse, error) {
 	entry, err := Read(req.Key, s.cluster)
+	if err != nil {
+		fmt.Println(fmt.Errorf("error getting value from cluster: %w", err))
+	}
 	var pbEntry *api.Entry
 	if entry != nil {
 		pbEntry = &api.Entry{
@@ -37,5 +41,9 @@ func (s *ClusterServer) Set(ctx context.Context, req *api.SetRequest) (*api.SetR
 		Key:   req.Entry.Key,
 		Value: req.Entry.Value,
 	}
-	return &api.SetResponse{}, Write(entry, s.cluster)
+	err := Write(entry, s.cluster)
+	if err != nil {
+		fmt.Println(fmt.Errorf("error setting value in cluster: %w", err))
+	}
+	return &api.SetResponse{}, err
 }

@@ -1,0 +1,21 @@
+1. `GET given_out` and check it is less than the max
+   `GET "user id"` and check it doesn't exist
+2. Attempt a transaction to get a ticket:
+   ```
+   WATCH given_out
+   WATCH "user id"
+   val = GET given_out
+   val = val + 1
+   MULTI
+   SET given_out $val
+   SET "user id" true
+   RPUSH ticketed_users "user id"
+   EXEC
+   ```
+3. If transaction succeeds, the user is successful
+   Maybe write the user id to more convenient storage, like into a queue or something
+   No need to syncronise on those writes, easy
+3b. If transaction fails, go back to 1. Retry a number of times, maybe with exponential
+    backoff. There's no need to reject the user if it can't go through, just return an
+    overloaded/failwhale message. If there's no tickets left then there's no locking
+    problem (things will exit at stage 1.)

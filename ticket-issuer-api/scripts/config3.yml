@@ -1,0 +1,7 @@
+---
+bind_address: :8083
+max_tickets_per_redis_shard: 1000
+redis_shard_urls:
+  - redis://127.0.0.1:6379
+  - redis://127.0.0.1:6380
+  - redis://127.0.0.1:6381

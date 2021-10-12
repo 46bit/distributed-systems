@@ -1,0 +1,22 @@
+syntax = "proto3";
+package api;
+option go_package = "./api";
+
+import "google/protobuf/duration.proto";
+
+service TicketIssuer {
+  rpc Health(HealthRequest) returns (HealthResponse) {}
+  rpc IssueTicket(IssueTicketRequest) returns (IssueTicketResponse) {}
+}
+
+message HealthRequest { }
+message HealthResponse {
+  google.protobuf.Duration uptime = 1;
+}
+
+message IssueTicketRequest {
+  uint64 user_id = 1;
+}
+message IssueTicketResponse {
+  bool ticketed = 1;
+}
